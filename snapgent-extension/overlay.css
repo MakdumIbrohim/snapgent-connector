@@ -354,7 +354,7 @@ html.zs-light #zs-target-menu {
     text-overflow: ellipsis;
   }
   #zs-stop { height: auto; padding: 0 12px; border-radius: 18px; }
-  .zs-target-wrap, #zs-switch {
+  .zs-target-wrap, #zs-switch, #zs-rollback, #zs-changes-btn {
     max-width: 38%;
     min-width: 0;
     min-height: 36px;
@@ -1369,11 +1369,16 @@ html.zs-light #zs-state b { color: #4f46e5; }
 html.zs-light #zs-state.zs-state-warn { color: #b91c1c; }
 html.zs-light #zs-bar.tone-active #zs-state b { color: #059669; }
 html.zs-light #zs-switch,
-html.zs-light .zs-target-wrap {
+html.zs-light .zs-target-wrap,
+html.zs-light #zs-rollback,
+html.zs-light #zs-changes-btn {
   background: rgba(0, 0, 0, 0.05); color: #4b5563;
   border-color: rgba(180, 130, 10, 0.55);
 }
-html.zs-light #zs-switch:hover { background: rgba(0, 0, 0, 0.09); color: #1f2430; }
+html.zs-light #zs-switch:hover,
+html.zs-light .zs-target-wrap:hover,
+html.zs-light #zs-rollback:hover,
+html.zs-light #zs-changes-btn:hover { background: rgba(0, 0, 0, 0.09); color: #1f2430; }
 html.zs-light #zs-action:disabled {
   background: rgba(0, 0, 0, 0.05); color: rgba(0, 0, 0, 0.35); border-color: rgba(0, 0, 0, 0.08);
 }
@@ -2216,24 +2221,24 @@ html[data-theme="dark"] .zs-btn-kbd {
   border-color: #64748b;
 }
 
-/* Rollback trigger button on the bar */
+/* Rollback trigger button on the bar (pill style matching target & model selectors) */
 #zs-rollback {
-  background: rgba(234, 179, 8, 0.15);
-  border: 1px solid rgba(234, 179, 8, 0.4);
-  color: #fde68a;
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex; align-items: center; gap: 5px;
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d0d0d6;
+  border: 1px solid rgba(234, 179, 8, 0.75);
+  border-radius: 18px;
+  font-size: 12px; font-weight: 600; font-family: inherit;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.14s ease, color 0.14s ease;
 }
 #zs-rollback svg {
-  display: block; flex-shrink: 0;
+  display: block; flex-shrink: 0; opacity: 0.75;
 }
 #zs-rollback:hover {
-  background: rgba(234, 179, 8, 0.25);
-  border-color: rgba(234, 179, 8, 0.6);
+  background: rgba(255, 255, 255, 0.11);
+  color: #ffffff;
 }
 #zs-rollback[hidden] { display: none !important; }
 
@@ -2253,24 +2258,24 @@ html[data-theme="dark"] .zs-btn-kbd {
   border-color: rgba(239, 68, 68, 0.6);
 }
 
-/* ── Workspace Changes Button on Bar ────────────────────────────────────── */
+/* ── Workspace Changes Button on Bar (pill style matching target & model selectors) ── */
 #zs-changes-btn {
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  color: #c7d2fe;
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex; align-items: center; gap: 5px;
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d0d0d6;
+  border: 1px solid rgba(234, 179, 8, 0.75);
+  border-radius: 18px;
+  font-size: 12px; font-weight: 600; font-family: inherit;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.14s ease, color 0.14s ease;
 }
 #zs-changes-btn svg {
-  display: block; flex-shrink: 0;
+  display: block; flex-shrink: 0; opacity: 0.75;
 }
 #zs-changes-btn:hover {
-  background: rgba(99, 102, 241, 0.25);
-  border-color: rgba(99, 102, 241, 0.6);
+  background: rgba(255, 255, 255, 0.11);
+  color: #ffffff;
 }
 #zs-changes-btn[hidden] { display: none !important; }
 
