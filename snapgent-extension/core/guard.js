@@ -304,6 +304,120 @@ const ZSGuard = (() => {
     return parts.join(" · ");
   }
 
+  // ── Safety & Review Guard ────────────────────────────────────────────────
+  // Tools that do not modify files, game datamodels, or system state. These are
+  // safe to run immediately without requiring human confirmation.
+  const READ_ONLY_TOOLS = new Set([
+    "read_file", "list_dir", "grep_search", "find_by_name", "find_files",
+    "git_status", "git_diff", "git_log", "git_branches",
+    "list_commands", "list_tools", "list_mcp_servers",
+    "inspect_instance", "get_studio_state", "search_game_tree", "script_read", "get_outline"
+  ]);
+
+  function isMutatingTool(name) {
+    if (!name || typeof name !== "string") return false;
+    const bare = name.split("/").pop().toLowerCase().trim();
+    return !READ_ONLY_TOOLS.has(bare);
+  }
+
+  // Formats human-readable metadata and diff/code preview for the Review dialog.
+  function formatDiffPreview(call) {
+    if (!call || typeof call !== "object") {
+      return { type: "unknown", target: "", title: "Execute Action", preview: "" };
+    }
+    const tool = String(call.tool || call.command || "");
+    const bare = tool.split("/").pop().toLowerCase().trim();
+    const args = (call.arguments != null ? call.arguments : call.params) || {};
+    const target = String(args.path || args.file || args.filename || args.command || args.target || "");
+
+    if (bare === "write_file" || bare === "create_file") {
+      const content = typeof args.content === "string" ? args.content : JSON.stringify(args.content || "", null, 2);
+      return {
+        type: "write",
+        target,
+        title: `Write File: ${target || "unnamed"}`,
+        preview: content
+      };
+    }
+    if (bare === "replace_string_in_file") {
+      const oldStr = String(args.old_string || "");
+      const newStr = String(args.new_string || "");
+      const diffLines = [];
+      for (const line of oldStr.split("\n")) diffLines.push(`- ${line}`);
+      for (const line of newStr.split("\n")) diffLines.push(`+ ${line}`);
+      return {
+        type: "replace",
+        target,
+        title: `Replace in: ${target || "unnamed"}`,
+        preview: diffLines.join("\n")
+      };
+    }
+    if (bare === "delete_file") {
+      return {
+        type: "delete",
+        target,
+        title: `Delete File: ${target || "unnamed"}`,
+        preview: `Warning: This will permanently delete '${target}'.`
+      };
+    }
+    if (bare === "execute_luau") {
+      const code = String(args.code || args.script || "");
+      return {
+        type: "luau",
+        target: args.datamodel_type || "Edit",
+        title: `Execute Luau (${args.datamodel_type || "Edit"})`,
+        preview: code
+      };
+    }
+    if (bare === "git_commit") {
+      return {
+        type: "git_commit",
+        target: "git",
+        title: `Git Commit`,
+        preview: `Commit message: ${args.message || "(empty)"}`
+      };
+    }
+    return {
+      type: "generic",
+      target,
+      title: `Execute Command: ${bare || "unknown"}`,
+      preview: JSON.stringify(args, null, 2)
+    };
+  }
+
+  // In-memory stack of file snapshots for 1-click rollback / undo.
+  function createRollbackTracker(limit = 32) {
+    const stack = [];
+    const max = limit > 0 ? limit : 32;
+    return {
+      push(entry) {
+        if (!entry || !entry.path) return;
+        stack.push({
+          action: entry.action || "restore",
+          path: String(entry.path),
+          content: entry.content != null ? String(entry.content) : null,
+          timestamp: entry.timestamp || Date.now(),
+        });
+        if (stack.length > max) stack.shift();
+      },
+      pop() {
+        return stack.pop() || null;
+      },
+      peek() {
+        return stack.length ? stack[stack.length - 1] : null;
+      },
+      canRollback() {
+        return stack.length > 0;
+      },
+      size() {
+        return stack.length;
+      },
+      clear() {
+        stack.length = 0;
+      }
+    };
+  }
+
   return {
     mayRetryAfterDisconnect,
     formatRunStats,
@@ -315,5 +429,8 @@ const ZSGuard = (() => {
     holdUntilScrollLapses,
     createScrollTracker,
     heartbeatDecision,
+    isMutatingTool,
+    formatDiffPreview,
+    createRollbackTracker,
   };
 })();

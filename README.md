@@ -289,6 +289,7 @@ The AI sends commands, snapgentV3 runs them in the selected target, and the resu
 
 - Keep the bridge window open — closing it disconnects the agent.
 - Keep your intended project open in VS Code when VS Code is selected as the MCP target.
+- Enable **Review Actions** in the Snapgent menu (Safety & Review) to inspect diffs and approve file edits or commands before execution, with 1-click **Undo** (rollback) for recent changes.
 - On **Arena**, use **Direct** mode.
 - If **Gemini** or **Kimi** stops using tools in a long session, remind it to use the snapgentV3 commands or start a new chat.
 

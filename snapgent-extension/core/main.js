@@ -173,6 +173,145 @@
     try { chrome.storage.local.set({ [REMOTE_COMMANDS_KEY]: value }); } catch {}
     return value;
   }
+
+  // ── Safety & Review Mode (Human-in-the-Loop) + Rollback ─────────────────
+  const REVIEW_MODE_KEY = "zsReviewMode";
+  let reviewModeEnabled = true;
+  let sessionAutoApproved = false;
+  const rollbackTracker = ZSGuard.createRollbackTracker(32);
+  let rollbackBtn = null;
+  let reviewModalEl = null;
+
+  function setReviewMode(on) {
+    reviewModeEnabled = on === true;
+    try { chrome.storage.local.set({ [REVIEW_MODE_KEY]: reviewModeEnabled }); } catch {}
+    return reviewModeEnabled;
+  }
+  try {
+    chrome.storage.local.get(REVIEW_MODE_KEY, (result) => {
+      if (result && typeof result[REVIEW_MODE_KEY] === "boolean") {
+        reviewModeEnabled = result[REVIEW_MODE_KEY];
+      }
+    });
+  } catch (error) {
+    console.warn("[snapgentV3] Could not load review-mode setting:", error);
+  }
+
+  function updateRollbackUi() {
+    if (rollbackBtn) {
+      rollbackBtn.hidden = !rollbackTracker.canRollback();
+    }
+  }
+
+  async function doRollback() {
+    if (!rollbackTracker.canRollback()) return;
+    const item = rollbackTracker.pop();
+    updateRollbackUi();
+    if (!item || !item.path) return;
+    if (item.action === "restore" && item.content != null) {
+      try {
+        const r = await bg({
+          type: "call_tool",
+          name: "write_file",
+          arguments: { path: item.path, content: item.content },
+          timeout: 8000,
+          server: selectedTargetId
+        });
+        if (r && r.ok) {
+          ui.toast(`Rolled back: restored ${item.path}`);
+        } else {
+          ui.toast(`Rollback failed for ${item.path}`);
+        }
+      } catch (err) {
+        ui.toast(`Rollback error: ${err.message || err}`);
+      }
+    } else if (item.action === "delete") {
+      try {
+        const r = await bg({
+          type: "call_tool",
+          name: "delete_file",
+          arguments: { path: item.path },
+          timeout: 8000,
+          server: selectedTargetId
+        });
+        if (r && r.ok) {
+          ui.toast(`Rolled back: deleted ${item.path}`);
+        } else {
+          ui.toast(`Rollback delete failed for ${item.path}`);
+        }
+      } catch (err) {
+        ui.toast(`Rollback error: ${err.message || err}`);
+      }
+    }
+  }
+
+  function showReviewModal(call) {
+    return new Promise((resolve) => {
+      if (!reviewModalEl) {
+        resolve({ action: "approve" });
+        return;
+      }
+      const preview = ZSGuard.formatDiffPreview(call);
+      const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+      reviewModalEl.innerHTML = `
+        <div class="zs-review-card" role="dialog" aria-modal="true" aria-label="Review AI action">
+          <div class="zs-review-head">
+            <span class="zs-review-badge">🛡️ Review Action</span>
+            <span class="zs-review-title">${esc(preview.title)}</span>
+          </div>
+          <div class="zs-review-body">
+            ${preview.target ? `<div class="zs-review-target">Target: <b>${esc(preview.target)}</b></div>` : ""}
+            <pre class="zs-review-preview">${esc(preview.preview)}</pre>
+            <div class="zs-review-feedback-wrap">
+              <span class="zs-review-feedback-label">Feedback if rejected (optional, sent to AI):</span>
+              <input type="text" id="zs-review-feedback" class="zs-review-feedback-input" placeholder="e.g. Use existing helper instead of modifying this file..." />
+            </div>
+          </div>
+          <div class="zs-review-foot">
+            <button type="button" id="zs-review-btn-reject" class="zs-review-btn zs-review-btn-reject">✗ Reject</button>
+            <button type="button" id="zs-review-btn-auto" class="zs-review-btn zs-review-btn-auto" title="Approve and trust all actions in this session">⚡ Always Allow Session</button>
+            <button type="button" id="zs-review-btn-approve" class="zs-review-btn zs-review-btn-approve">✓ Approve</button>
+          </div>
+        </div>
+      `;
+      reviewModalEl.hidden = false;
+
+      const inputEl = reviewModalEl.querySelector("#zs-review-feedback");
+      const approveBtn = reviewModalEl.querySelector("#zs-review-btn-approve");
+      const rejectBtn = reviewModalEl.querySelector("#zs-review-btn-reject");
+      const autoBtn = reviewModalEl.querySelector("#zs-review-btn-auto");
+
+      let resolved = false;
+      const finish = (result) => {
+        if (resolved) return;
+        resolved = true;
+        reviewModalEl.hidden = true;
+        reviewModalEl.innerHTML = "";
+        document.removeEventListener("keydown", onKeyDown, true);
+        resolve(result);
+      };
+
+      const onKeyDown = (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          finish({ action: "reject", reason: inputEl ? inputEl.value.trim() : "" });
+        } else if (e.key === "Enter" && e.ctrlKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          finish({ action: "approve" });
+        }
+      };
+      document.addEventListener("keydown", onKeyDown, true);
+
+      if (approveBtn) approveBtn.addEventListener("click", () => finish({ action: "approve" }));
+      if (rejectBtn) rejectBtn.addEventListener("click", () => finish({ action: "reject", reason: inputEl ? inputEl.value.trim() : "" }));
+      if (autoBtn) autoBtn.addEventListener("click", () => finish({ action: "auto_session" }));
+
+      if (approveBtn) approveBtn.focus();
+    });
+  }
   let selectedTargetId = "none";
   try {
     chrome.storage.local.get(TARGET_STORAGE_KEY, (result) => {
@@ -1302,6 +1441,40 @@
     // it can only be right. (It still needs the game RUNNING; that's documented.)
     if ((bareName === "user_keyboard_input" || bareName === "user_mouse_input") && !args.datamodel_type)
       args.datamodel_type = "Client";
+
+    // ── Safety & Review Guard (Human-in-the-Loop) ──────────────────────────
+    if (ZSGuard.isMutatingTool(name)) {
+      // Capture rollback snapshot if target modifies a workspace file path
+      if (selectedTargetId === "vscode" && args && typeof args.path === "string") {
+        try {
+          const probe = await bg({
+            type: "call_tool",
+            name: "read_file",
+            arguments: { path: args.path },
+            timeout: 3000,
+            server: selectedTargetId,
+          });
+          if (probe && probe.ok && typeof probe.text === "string") {
+            rollbackTracker.push({ action: "restore", path: args.path, content: probe.text });
+          } else {
+            rollbackTracker.push({ action: "delete", path: args.path });
+          }
+          updateRollbackUi();
+        } catch {}
+      }
+
+      if (reviewModeEnabled && !sessionAutoApproved) {
+        const decision = await showReviewModal(call);
+        if (decision.action === "reject") {
+          return `ERROR: The '${bareName}' action was rejected by the user. User feedback: ${decision.reason || "Action not approved. Please revise your approach or ask for clarification."}`;
+        }
+        if (decision.action === "auto_session") {
+          sessionAutoApproved = true;
+          ui.toast("Review Mode: Auto-approved for this session.");
+        }
+      }
+    }
+
     const timeout = name === "execute_luau" ? 20000 : 120000;
     // Hard watchdog: even if the background worker never answers, the loop
     // gets a definitive result and continues.
@@ -2511,6 +2684,7 @@
     }
     A.userStopped = false;
     A.stop = false;               // clear any halt left by a prior aborted bootstrap
+    sessionAutoApproved = false;  // require review for new session if review mode is on
     // Snapshot any turn already on screen at session start (normally none on a
     // clean new chat; on a reload-restored generation it's the stray turn). The
     // auto-resume watchdog refuses to run a tool from this baseline turn so a
@@ -3535,6 +3709,7 @@
           <span id="zs-state"></span>
           <button id="zs-action"></button>
           <button id="zs-stop" hidden>■ Stop</button>
+          <button id="zs-rollback" hidden type="button" title="Rollback last file modification">⏪ Undo</button>
           <div class="zs-target-wrap" title="Choose which MCP server receives commands">
             <select id="zs-target" aria-label="MCP target" hidden tabindex="-1">
               <option value="none">None</option>
@@ -3550,6 +3725,7 @@
         <button id="zs-dot" type="button" hidden aria-label="Show Snapgent status" title="Show Snapgent status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg></button>
         <div id="zs-menu" hidden></div>
         <div id="zs-target-menu" hidden></div>
+        <div id="zs-review-modal" hidden></div>
         ${P.unstableWarning ? `<button id="zs-unstable" aria-label="Provider may be unstable" hidden>⚠ unstable</button>` : ""}
       `;
       document.documentElement.appendChild(root);
@@ -3563,6 +3739,16 @@
       switchBtn = root.querySelector("#zs-switch");
       hideBtn = root.querySelector("#zs-bar-hide");
       dotBtn = root.querySelector("#zs-dot");
+      rollbackBtn = root.querySelector("#zs-rollback");
+      reviewModalEl = root.querySelector("#zs-review-modal");
+      if (rollbackBtn) {
+        rollbackBtn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          doRollback();
+        });
+      }
+      updateRollbackUi();
       const applyHud = () => {
         if (bar) {
           bar.hidden = hudHidden;
@@ -4050,13 +4236,30 @@
           ? `<div class="zs-site-opt zs-site-here">${label}<span class="zs-site-badge">active</span></div>`
           : `<button class="zs-site-opt" data-u="${s.url}">${label}<span class="zs-site-go">&rarr;</span></button>`;
       }
+      function safetySectionHtml() {
+        return `
+          <section class="zs-menu-sec">
+            <div class="zs-sec-label"><span>Safety & Review</span></div>
+            <label class="zs-mcp-row" title="Review mutating actions (file edits, script execution) before they run">
+              <span class="zs-mcp-row-info">
+                <span class="zs-mcp-row-name">Review Actions</span>
+                <span class="zs-mcp-row-meta">Inspect file edits and commands before execution</span>
+              </span>
+              <input type="checkbox" id="zs-review-mode-toggle" class="zs-mcp-check" ${reviewModeEnabled ? "checked" : ""}>
+              <span class="zs-mcp-toggle"></span>
+            </label>
+          </section>
+        `;
+      }
+
       menuEl.innerHTML =
         `<div class="zs-menu-head"><span class="zs-menu-logo">snapgentV3</span></div>
          <section class="zs-menu-sec">
            <div class="zs-sec-label zs-sec-label-row"><span>Switch AI</span><span><button id="zs-skills-settings" class="zs-gear" title="Skills" aria-label="Skills">&#9733;</button><button id="zs-mcp-settings" class="zs-gear" title="MCP settings" aria-label="MCP settings">&#9881;</button></span></div>
            <div class="zs-site-grid">${sites}</div>
          </section>
-         ${skillsSectionHtml()}`;
+         ${skillsSectionHtml()}
+         ${safetySectionHtml()}`;
       const open = (url) => { try { window.open(url, "_blank", "noopener"); } catch {} menuEl.hidden = true; };
       menuEl.querySelectorAll("button.zs-site-opt, .zs-tip-opt").forEach((b) =>
         b.addEventListener("click", () => open(b.dataset.u)));
@@ -4078,6 +4281,13 @@
       });
       menuEl.querySelectorAll(".zs-skill-check").forEach((box) =>
         box.addEventListener("change", () => setSkillEnabled(box.dataset.name, box.checked)));
+      const reviewBox = menuEl.querySelector("#zs-review-mode-toggle");
+      if (reviewBox) {
+        reviewBox.addEventListener("change", () => {
+          setReviewMode(reviewBox.checked);
+          ui.toast(reviewModeEnabled ? "Review Mode enabled." : "Review Mode disabled.");
+        });
+      }
       const starBtn = menuEl.querySelector("#zs-skills-settings");
       if (starBtn) starBtn.addEventListener("click", (e) => { e.stopPropagation(); menuEl.hidden = true; openSkillsSettings(); });
     }

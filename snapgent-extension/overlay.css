@@ -1488,3 +1488,130 @@ html.zs-site-chatgpt[data-theme="dark"] .zs-chip:not(.result).err .zs-chip-ic,
 html.zs-site-chatgpt.dark .zs-chip:not(.result).err .zs-chip-ic { color: #ef6b6b; }
 html.zs-site-chatgpt[data-theme="dark"] .zs-chip:not(.result).err,
 html.zs-site-chatgpt.dark .zs-chip:not(.result).err { border-color: rgba(239, 68, 68, 0.45); }
+
+/* ── Safety & Review Modal + Rollback ───────────────────────────────────── */
+#zs-review-modal {
+  position: fixed; inset: 0; z-index: 2147483640;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  padding: 16px;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  box-sizing: border-box;
+}
+#zs-review-modal[hidden] { display: none !important; }
+
+.zs-review-card {
+  width: min(580px, 96vw);
+  background: #17171c;
+  color: #ececec;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  animation: zs-review-pop 0.18s ease-out;
+}
+@keyframes zs-review-pop {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.zs-review-head {
+  padding: 12px 16px;
+  background: #1f1f26;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.zs-review-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: #fbbf24; background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  padding: 2px 8px; border-radius: 6px;
+}
+.zs-review-title {
+  font-size: 13px; font-weight: 600; color: #f3f4f6;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.zs-review-body {
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: 520px; overflow-y: auto;
+}
+.zs-review-target {
+  font-size: 12px; color: #9ca3af;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  word-break: break-all;
+}
+.zs-review-preview {
+  margin: 0; padding: 10px 12px;
+  background: #0d0d11;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px; line-height: 1.5; color: #e5e7eb;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 240px; overflow-y: auto;
+}
+.zs-review-feedback-wrap {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.zs-review-feedback-label {
+  font-size: 11px; color: #9ca3af;
+}
+.zs-review-feedback-input {
+  width: 100%; box-sizing: border-box;
+  padding: 7px 10px; border-radius: 6px;
+  background: #24242e; color: #f3f4f6;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px; font-family: inherit;
+  outline: none;
+}
+.zs-review-feedback-input:focus {
+  border-color: #fbbf24;
+}
+.zs-review-foot {
+  padding: 10px 16px;
+  background: #1b1b22;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap;
+}
+.zs-review-btn {
+  padding: 6px 12px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent; transition: background 0.15s, opacity 0.15s;
+}
+.zs-review-btn:hover { opacity: 0.9; }
+.zs-review-btn:active { transform: translateY(1px); }
+.zs-review-btn-approve {
+  background: #16a34a; color: #ffffff;
+  border-color: #22c55e;
+}
+.zs-review-btn-reject {
+  background: rgba(239, 68, 68, 0.15); color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.zs-review-btn-auto {
+  background: rgba(255, 255, 255, 0.06); color: #d1d5db;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Rollback trigger button on the bar */
+#zs-rollback {
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  color: #fde68a;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+#zs-rollback:hover {
+  background: rgba(234, 179, 8, 0.25);
+  border-color: rgba(234, 179, 8, 0.6);
+}
+#zs-rollback[hidden] { display: none !important; }
+
