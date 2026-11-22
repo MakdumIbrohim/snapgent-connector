@@ -330,7 +330,11 @@ const ZSGuard = (() => {
     const args = (call.arguments != null ? call.arguments : call.params) || {};
     const target = String(args.path || args.file || args.filename || args.command || args.target || "");
 
-    if (bare === "write_file" || bare === "create_file") {
+    const isWrite = bare === "write_file" || bare === "create_file" || bare === "overwrite_file";
+    const isEdit = bare === "replace_string_in_file" || bare === "edit_file" || bare === "modify_file" || bare === "patch_file" || bare === "apply_patch";
+    const isDelete = bare === "delete_file" || bare === "remove_file" || bare === "unlink" || bare === "trash_file";
+
+    if (isWrite) {
       const content = typeof args.content === "string" ? args.content : JSON.stringify(args.content || "", null, 2);
       return {
         type: "write",
@@ -339,20 +343,20 @@ const ZSGuard = (() => {
         preview: content
       };
     }
-    if (bare === "replace_string_in_file") {
-      const oldStr = String(args.old_string || "");
-      const newStr = String(args.new_string || "");
+    if (isEdit) {
+      const oldStr = String(args.old_text != null ? args.old_text : (args.old_string != null ? args.old_string : ""));
+      const newStr = String(args.new_text != null ? args.new_text : (args.new_string != null ? args.new_string : ""));
       const diffLines = [];
       for (const line of oldStr.split("\n")) diffLines.push(`- ${line}`);
       for (const line of newStr.split("\n")) diffLines.push(`+ ${line}`);
       return {
         type: "replace",
         target,
-        title: `Replace in: ${target || "unnamed"}`,
+        title: `Edit in: ${target || "unnamed"}`,
         preview: diffLines.join("\n")
       };
     }
-    if (bare === "delete_file") {
+    if (isDelete) {
       return {
         type: "delete",
         target,
@@ -703,56 +707,106 @@ const ZSGuard = (() => {
     const args = (call.arguments != null ? call.arguments : call.params) || {};
     const target = String(args.path || args.file || args.filename || args.command || args.target || "");
 
-    // 1. replace_string_in_file
-    if (bare === "replace_string_in_file") {
-      const oldText = String(args.old_string != null ? args.old_string : (args.old_text != null ? args.old_text : ""));
-      const newText = String(args.new_string != null ? args.new_string : (args.new_text != null ? args.new_text : ""));
+    const isWrite = bare === "write_file" || bare === "create_file" || bare === "overwrite_file";
+    const isEdit = bare === "replace_string_in_file" || bare === "edit_file" || bare === "modify_file" || bare === "patch_file" || bare === "apply_patch";
+    const isDelete = bare === "delete_file" || bare === "remove_file" || bare === "unlink" || bare === "trash_file";
+
+    // 1. Edit file (replace_string_in_file / edit_file)
+    if (isEdit) {
+      const oldText = String(args.old_text != null ? args.old_text : (args.old_string != null ? args.old_string : (args.target != null && typeof args.target === "string" ? args.target : "")));
+      const newText = String(args.new_text != null ? args.new_text : (args.new_string != null ? args.new_string : (args.replacement != null ? args.replacement : "")));
 
       if (currentContent == null) {
+        // Fallback diff directly between oldText and newText if disk file content is unavailable
+        const oldLines = oldText ? oldText.split("\n") : [];
+        const newLines = newText ? newText.split("\n") : [];
+        const edits = computeLineDiff(oldLines, newLines);
+        const aligned = alignDiffRows(edits);
+
+        let addCount = 0;
+        let delCount = 0;
+        for (const row of aligned) {
+          if (row.kind === "add") addCount++;
+          else if (row.kind === "delete") delCount++;
+          else if (row.kind === "modify") {
+            addCount++;
+            delCount++;
+          }
+        }
+        const items = foldUnchangedRows(aligned);
         return {
           type: "edit",
           target,
           title: "Agen ingin mengubah file ini",
           statusBadge: "Perubahan ditulis ke file yang sudah ada",
-          addCount: 0,
-          delCount: 0,
-          error: "Isi file saat ini tidak dapat dibaca dari disk.",
+          addCount,
+          delCount,
+          error: null,
           noChanges: false,
-          canApprove: false,
+          canApprove: true,
           isSinglePanel: false,
-          items: [],
+          items,
         };
       }
 
       const count = countOccurrences(currentContent, oldText);
       if (oldText === "" || count === 0) {
+        // Render diff between oldText and newText so user sees what the agent tried to do
+        const oldLines = oldText ? oldText.split("\n") : [];
+        const newLines = newText ? newText.split("\n") : [];
+        const edits = computeLineDiff(oldLines, newLines);
+        const aligned = alignDiffRows(edits);
+        let addCount = 0;
+        let delCount = 0;
+        for (const row of aligned) {
+          if (row.kind === "add") addCount++;
+          else if (row.kind === "delete") delCount++;
+          else if (row.kind === "modify") {
+            addCount++;
+            delCount++;
+          }
+        }
         return {
           type: "edit",
           target,
           title: "Agen ingin mengubah file ini",
           statusBadge: "Perubahan ditulis ke file yang sudah ada",
-          addCount: 0,
-          delCount: 0,
+          addCount,
+          delCount,
           error: "Teks lama tidak ditemukan di dalam file.",
           noChanges: false,
           canApprove: false,
           isSinglePanel: false,
-          items: [],
+          items: aligned,
         };
       }
       if (count > 1) {
+        const oldLines = oldText ? oldText.split("\n") : [];
+        const newLines = newText ? newText.split("\n") : [];
+        const edits = computeLineDiff(oldLines, newLines);
+        const aligned = alignDiffRows(edits);
+        let addCount = 0;
+        let delCount = 0;
+        for (const row of aligned) {
+          if (row.kind === "add") addCount++;
+          else if (row.kind === "delete") delCount++;
+          else if (row.kind === "modify") {
+            addCount++;
+            delCount++;
+          }
+        }
         return {
           type: "edit",
           target,
           title: "Agen ingin mengubah file ini",
           statusBadge: "Perubahan ditulis ke file yang sudah ada",
-          addCount: 0,
-          delCount: 0,
+          addCount,
+          delCount,
           error: `Teks lama muncul lebih dari sekali di dalam file (${count} kali).`,
           noChanges: false,
           canApprove: false,
           isSinglePanel: false,
-          items: [],
+          items: aligned,
         };
       }
 
@@ -807,7 +861,7 @@ const ZSGuard = (() => {
     }
 
     // 2. write_file / create_file
-    if (bare === "write_file" || bare === "create_file") {
+    if (isWrite) {
       const newContent = typeof args.content === "string" ? args.content : JSON.stringify(args.content || "", null, 2);
 
       // File already exists -> full rewrite
@@ -883,10 +937,10 @@ const ZSGuard = (() => {
       };
     }
 
-    // 3. delete_file
-    if (bare === "delete_file") {
-      const lines = currentContent != null ? currentContent.split("\n") : [];
-      const items = lines.map((line, idx) => ({
+    // 3. delete_file / remove_file
+    if (isDelete) {
+      const rawLines = currentContent != null ? currentContent.split("\n") : [`[Hapus file: ${target || "file"}]`];
+      const items = rawLines.map((line, idx) => ({
         type: "row",
         kind: "delete",
         left: { lineNo: idx + 1, sign: "−", text: line, words: [{ text: line, changed: false }] },
@@ -898,7 +952,7 @@ const ZSGuard = (() => {
         title: "Agen ingin menghapus file ini",
         statusBadge: "File akan dihapus",
         addCount: 0,
-        delCount: lines.length,
+        delCount: rawLines.length,
         error: null,
         noChanges: false,
         canApprove: true,

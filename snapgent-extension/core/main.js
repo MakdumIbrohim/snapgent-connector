@@ -1662,21 +1662,28 @@
       // Capture rollback snapshot if target modifies a workspace file path
       let fileExisted = false;
       let currentContent = null;
-      if (selectedTargetId === "vscode" && args && typeof args.path === "string") {
+      const targetPath = args && (args.path || args.file || args.filename || args.target);
+      const isFileTool = [
+        "write_file", "create_file", "edit_file", "replace_string_in_file",
+        "delete_file", "remove_file", "apply_patch", "patch_file", "modify_file"
+      ].includes(bareName);
+
+      if (isFileTool && typeof targetPath === "string") {
         try {
+          const probeServer = (name.includes("/") ? name.split("/")[0] : null) || (selectedTargetId && selectedTargetId !== "none" ? selectedTargetId : "vscode");
           const probe = await bg({
             type: "call_tool",
-            name: "read_file",
-            arguments: { path: args.path },
+            name: probeServer && name.includes("/") ? `${probeServer}/read_file` : "read_file",
+            arguments: { path: targetPath },
             timeout: 3000,
-            server: selectedTargetId,
+            server: probeServer,
           });
           if (probe && probe.ok && typeof probe.text === "string") {
             fileExisted = true;
             currentContent = probe.text;
-            rollbackTracker.push({ action: "restore", path: args.path, content: probe.text });
+            rollbackTracker.push({ action: "restore", path: targetPath, content: probe.text });
           } else {
-            rollbackTracker.push({ action: "delete", path: args.path });
+            rollbackTracker.push({ action: "delete", path: targetPath });
           }
           updateRollbackUi();
         } catch {}

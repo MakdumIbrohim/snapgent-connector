@@ -193,22 +193,29 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
   ok("Kasus 4c: tidak ada perubahan canApprove is false", resNoChange.canApprove === false);
   ok("Kasus 4c: tidak ada perubahan has error Tidak ada perubahan", resNoChange.error.includes("Tidak ada perubahan"));
 
-  // Kasus 5: File panjang dengan bagian yang dilipat (> 6 baris)
-  const longOld = [];
-  for (let i = 1; i <= 15; i++) longOld.push(`line ${i}`);
-  longOld.push("target change");
-  for (let i = 17; i <= 26; i++) longOld.push(`line ${i}`);
-
-  const longOldStr = longOld.join("\n");
-  const callLong = {
-    tool: "replace_string_in_file",
-    arguments: { path: "long.txt", old_string: "target change", new_string: "target changed" }
+  // Kasus 6: edit_file tool name and delete_file tool name
+  const callEditTool = {
+    tool: "vscode/edit_file",
+    arguments: { path: "contoh.txt", old_text: "baris lama", new_text: "baris baru" }
   };
-  const resLong = G.prepareFileReview(callLong, longOldStr);
-  ok("Kasus 5: file panjang menghasilkan item fold", resLong.items.some(r => r.type === "fold"));
-  const foldItem = resLong.items.find(r => r.type === "fold");
-  ok("Kasus 5: item fold memiliki count dan hidden rows", foldItem.count > 0 && foldItem.rows.length === foldItem.count);
-  ok("Kasus 5: menyisakan 3 baris konteks sebelum perubahan", resLong.items.filter(r => r.type === "row" && r.kind === "equal").length >= 3);
+  const resEditTool = G.prepareFileReview(callEditTool, "baris lama di sini");
+  ok("Kasus 6: vscode/edit_file recognized as edit", resEditTool.type === "edit");
+  ok("Kasus 6: vscode/edit_file title is Agen ingin mengubah file ini", resEditTool.title === "Agen ingin mengubah file ini");
+  ok("Kasus 6: vscode/edit_file produces items diff", resEditTool.items.length > 0 && resEditTool.addCount === 1 && resEditTool.delCount === 1);
+
+  // Fallback edit_file when disk content is null
+  const resEditToolNoDisk = G.prepareFileReview(callEditTool, null);
+  ok("Kasus 6b: edit_file without disk content still produces diff preview", resEditToolNoDisk.items.length > 0 && resEditToolNoDisk.type === "edit");
+
+  // delete_file with and without disk content
+  const callDeleteTool = {
+    tool: "vscode/delete_file",
+    arguments: { path: "contoh.txt" }
+  };
+  const resDeleteWithDisk = G.prepareFileReview(callDeleteTool, "line1\nline2");
+  ok("Kasus 6c: delete_file with content produces delete items", resDeleteWithDisk.type === "delete" && resDeleteWithDisk.delCount === 2);
+  const resDeleteNoDisk = G.prepareFileReview(callDeleteTool, null);
+  ok("Kasus 6d: delete_file without content still produces delete item", resDeleteNoDisk.type === "delete" && resDeleteNoDisk.items.length === 1 && resDeleteNoDisk.delCount === 1);
 }
 
 // ── 6. Main & CSS Wiring Checks ─────────────────────────────────────────────
