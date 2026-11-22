@@ -263,73 +263,249 @@
     if (!changesModalEl) return;
     const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const items = [...sessionModifiedFiles.values()];
-    const grouped = ZSGuard.groupFilesByDirectory(items);
 
-    if (!items.length) {
-      ui.toast("No workspace changes in this session yet.");
-      return;
-    }
-
-    let activePath = items[0].path;
-    const renderContent = () => {
-      const activeItem = sessionModifiedFiles.get(activePath) || items[0];
-      const treeHtml = grouped.map((g) => {
-        const fileRows = g.files.map((f) => {
-          const isCur = f.path === activePath;
-          return `<button type="button" class="zs-ws-tree-file${isCur ? " active" : ""}" data-path="${esc(f.path)}">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <span>${esc(f.name)}</span>
-          </button>`;
-        }).join("");
-        return `<div class="zs-ws-tree-group">
-          <div class="zs-ws-tree-folder">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-            <span>${esc(g.folder)}</span>
-          </div>
-          <div class="zs-ws-tree-files">${fileRows}</div>
-        </div>`;
+    const formatWordList = (words, kind) => {
+      if (!words || !words.length) return "";
+      return words.map((w) => {
+        const text = esc(w.text);
+        if (w.changed) {
+          return `<span class="zs-word-${kind}">${text}</span>`;
+        }
+        return text;
       }).join("");
+    };
+
+    const renderDiffRow = (row) => {
+      const left = row.left;
+      const right = row.right;
+      const leftClass = left ? (row.kind === "delete" || row.kind === "modify" ? "zs-diff-del" : "") : "zs-diff-filler";
+      const rightClass = right ? (row.kind === "add" || row.kind === "modify" ? "zs-diff-add" : "") : "zs-diff-filler";
+
+      const leftHtml = left ? `
+        <span class="zs-diff-lineno">${left.lineNo != null ? left.lineNo : ""}</span>
+        <span class="zs-diff-sign">${esc(left.sign || "")}</span>
+        <span class="zs-diff-text">${formatWordList(left.words, "del")}</span>
+      ` : "";
+
+      const rightHtml = right ? `
+        <span class="zs-diff-lineno">${right.lineNo != null ? right.lineNo : ""}</span>
+        <span class="zs-diff-sign">${esc(right.sign || "")}</span>
+        <span class="zs-diff-text">${formatWordList(right.words, "add")}</span>
+      ` : "";
+
+      return `
+        <div class="zs-diff-row">
+          <div class="zs-diff-cell zs-diff-cell-left ${leftClass}">${leftHtml}</div>
+          <div class="zs-diff-cell zs-diff-cell-right ${rightClass}">${rightHtml}</div>
+        </div>
+      `;
+    };
+
+    // Precalculate review diff data and totals for all items
+    let totalAdds = 0;
+    let totalDels = 0;
+    items.forEach((item) => {
+      if (!item.reviewData) {
+        const fallbackCall = item.call || { tool: item.tool || "write_file", arguments: { path: item.path } };
+        item.reviewData = ZSGuard.prepareFileReview(fallbackCall, item.oldContent);
+      }
+      totalAdds += item.reviewData.addCount || 0;
+      totalDels += item.reviewData.delCount || 0;
+    });
+
+    const allPaths = items.map((it) => it.path);
+    let activePath = allPaths.length > 0 ? allPaths[0] : "";
+
+    const closeHandler = () => {
+      changesModalEl.hidden = true;
+      changesModalEl.innerHTML = "";
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeHandler();
+        return;
+      }
+      if (allPaths.length > 1) {
+        const curIdx = allPaths.indexOf(activePath);
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          const nextIdx = (curIdx + 1) % allPaths.length;
+          activePath = allPaths[nextIdx];
+          renderContent(true);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          const prevIdx = (curIdx - 1 + allPaths.length) % allPaths.length;
+          activePath = allPaths[prevIdx];
+          renderContent(true);
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+
+    const renderContent = (resetScroll = false) => {
+      const grouped = ZSGuard.groupFilesByDirectory(items);
+      const activeItem = sessionModifiedFiles.get(activePath) || items[0] || null;
+
+      let treeHtml = "";
+      if (!items.length) {
+        treeHtml = `<div class="zs-ws-no-files">Tidak ada file</div>`;
+      } else {
+        treeHtml = grouped.map((g) => {
+          const fileRows = g.files.map((f) => {
+            const isCur = f.path === activePath;
+            const fileItem = sessionModifiedFiles.get(f.path) || f.item;
+            const status = ZSGuard.resolveFileStatusChip(fileItem);
+            const rev = (fileItem && fileItem.reviewData) || ZSGuard.prepareFileReview(fileItem.call || { tool: fileItem.tool, arguments: { path: f.path } }, fileItem.oldContent);
+            return `
+              <button type="button" role="option" aria-selected="${isCur}" aria-current="${isCur ? "true" : "false"}" class="zs-ws-tree-file${isCur ? " active" : ""}" data-path="${esc(f.path)}">
+                <span class="zs-ws-chip ${status.cls}">${status.chip}</span>
+                <span class="zs-ws-file-name" title="${esc(f.path)}">${esc(f.name)}</span>
+                <span class="zs-ws-file-diff"><span class="zs-diff-summary-add">+${rev.addCount}</span> <span class="zs-diff-summary-del">−${rev.delCount}</span></span>
+              </button>
+            `;
+          }).join("");
+          return `
+            <div class="zs-ws-tree-group">
+              <div class="zs-ws-tree-folder">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                <span>${esc(g.folder)}</span>
+              </div>
+              <div class="zs-ws-tree-files">${fileRows}</div>
+            </div>
+          `;
+        }).join("");
+      }
+
+      let previewPaneHtml = "";
+      if (!activeItem) {
+        previewPaneHtml = `
+          <div class="zs-ws-empty-state">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            <span>Belum ada perubahan di workspace</span>
+          </div>
+        `;
+      } else {
+        const rev = activeItem.reviewData || ZSGuard.prepareFileReview(activeItem.call || { tool: activeItem.tool, arguments: { path: activeItem.path } }, activeItem.oldContent);
+        const status = ZSGuard.resolveFileStatusChip(activeItem);
+
+        // Check file size for large/binary preview
+        const previewStr = rev.preview || (activeItem.call && activeItem.call.arguments && activeItem.call.arguments.content) || "";
+        const isTooLarge = previewStr.length > 250000;
+
+        let diffContentHtml = "";
+        if (isTooLarge) {
+          diffContentHtml = `
+            <div class="zs-ws-empty-state">
+              <span>Pratinjau tidak tersedia (${Math.round(previewStr.length / 1024)} KB)</span>
+            </div>
+          `;
+        } else {
+          let rowsHtml = "";
+          for (const item of (rev.items || [])) {
+            if (item.type === "fold") {
+              const foldId = item.foldId;
+              rowsHtml += `
+                <div class="zs-diff-fold-bar" id="${foldId}-bar">
+                  <button type="button" class="zs-diff-fold-btn" data-fold-id="${foldId}">Tampilkan ${item.count} baris yang tidak berubah</button>
+                </div>
+                <div class="zs-diff-fold-content" id="${foldId}-content" style="display: none;">
+              `;
+              for (const row of item.rows) {
+                rowsHtml += renderDiffRow(row);
+              }
+              rowsHtml += `</div>`;
+            } else {
+              rowsHtml += renderDiffRow(item);
+            }
+          }
+
+          diffContentHtml = `
+            <div class="zs-diff-col-headers">
+              <div class="zs-diff-col-header zs-diff-header-left">Sebelum</div>
+              <div class="zs-diff-col-header zs-diff-header-right">Sesudah</div>
+            </div>
+            <div class="zs-diff-box zs-ws-diff-box">
+              <div class="zs-diff-scroll" id="zs-ws-scroll-pane">
+                <div class="zs-diff-table">
+                  ${rowsHtml || `<div class="zs-ws-empty-state"><span>Tidak ada baris perubahan</span></div>`}
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        previewPaneHtml = `
+          <div class="zs-ws-pane-header">
+            <span class="zs-ws-bar-path">${esc(activeItem.path)}</span>
+            <span class="zs-review-badge-status ${status.cls}-pill">${status.text}</span>
+            <span class="zs-diff-summary-wrap"><span class="zs-diff-summary-add">+${rev.addCount}</span> <span class="zs-diff-summary-del">−${rev.delCount}</span></span>
+          </div>
+          ${diffContentHtml}
+        `;
+      }
 
       changesModalEl.innerHTML = `
-        <div class="zs-review-card zs-ws-changes-card" role="dialog" aria-modal="true" aria-label="Workspace Changes Preview">
-          <div class="zs-review-head">
-            <span class="zs-review-badge">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-              <span>Workspace Changes (${items.length} files)</span>
-            </span>
-            <button type="button" class="zs-ws-close-btn" aria-label="Close">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <div class="zs-ws-changes-card" role="dialog" aria-modal="true" aria-label="Perubahan di workspace">
+          <div class="zs-ws-header">
+            <div class="zs-ws-header-title">
+              <span>Perubahan di workspace</span>
+              <span class="zs-ws-count-badge">(${items.length} file)</span>
+            </div>
+            <button type="button" class="zs-ws-close-btn" aria-label="Tutup" title="Tutup">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
+
           <div class="zs-ws-changes-layout">
-            <div class="zs-ws-tree-sidebar">
-              <div class="zs-ws-tree-title">Modified Files:</div>
+            <div class="zs-ws-tree-sidebar" role="listbox" aria-label="File yang berubah">
+              <div class="zs-ws-sidebar-label">File yang berubah</div>
               ${treeHtml}
             </div>
             <div class="zs-ws-preview-pane">
-              <div class="zs-review-target">Viewing: <b>${esc(activeItem.path)}</b> (${esc(activeItem.title || activeItem.tool)})</div>
-              <pre class="zs-review-preview zs-ws-preview-code">${esc(activeItem.preview || "")}</pre>
+              ${previewPaneHtml}
             </div>
           </div>
-          <div class="zs-review-foot">
-            <button type="button" class="zs-review-btn zs-review-btn-auto zs-ws-modal-close">Close</button>
+
+          <div class="zs-ws-footer">
+            <div class="zs-ws-footer-summary">${items.length} file diubah · <span class="zs-diff-summary-add">+${totalAdds}</span> <span class="zs-diff-summary-del">−${totalDels}</span></div>
+            <button type="button" class="zs-review-btn-outline zs-ws-modal-close"><span class="zs-btn-close-text">Tutup</span> <span class="zs-btn-kbd">Esc</span></button>
           </div>
         </div>
       `;
 
       changesModalEl.hidden = false;
 
+      // Reset scroll position to top when switching files
+      const scrollPane = changesModalEl.querySelector("#zs-ws-scroll-pane");
+      if (scrollPane && resetScroll) {
+        scrollPane.scrollTop = 0;
+      }
+
+      // Wire file click listeners
       changesModalEl.querySelectorAll(".zs-ws-tree-file").forEach((b) => {
         b.addEventListener("click", () => {
           activePath = b.dataset.path;
-          renderContent();
+          renderContent(true);
         });
       });
 
-      const closeHandler = () => {
-        changesModalEl.hidden = true;
-        changesModalEl.innerHTML = "";
-      };
+      // Wire fold buttons inside diff view
+      changesModalEl.querySelectorAll(".zs-diff-fold-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const foldId = btn.getAttribute("data-fold-id");
+          const bar = changesModalEl.querySelector(`#${foldId}-bar`);
+          const content = changesModalEl.querySelector(`#${foldId}-content`);
+          if (bar) bar.style.display = "none";
+          if (content) content.style.display = "block";
+        });
+      });
+
       const closeBtn = changesModalEl.querySelector(".zs-ws-close-btn");
       const modalClose = changesModalEl.querySelector(".zs-ws-modal-close");
       if (closeBtn) closeBtn.addEventListener("click", closeHandler);
@@ -1749,13 +1925,18 @@
         tokIn: A.genTok || 0,
       },
     }).catch(() => {});
-    if (r && r.ok !== false && ZSGuard.isMutatingTool(name) && args && typeof args.path === "string") {
+    if (r && r.ok !== false && ZSGuard.isMutatingTool(name) && args && (args.path || args.file || args.filename || args.target)) {
+      const targetPath = String(args.path || args.file || args.filename || args.target);
       const prev = ZSGuard.formatDiffPreview(call);
-      sessionModifiedFiles.set(args.path, {
-        path: args.path,
+      const reviewData = ZSGuard.prepareFileReview(call, call ? call._currentContent : null);
+      sessionModifiedFiles.set(targetPath, {
+        path: targetPath,
         tool: name,
         title: prev.title,
         preview: prev.preview,
+        oldContent: call ? call._currentContent : null,
+        call: call,
+        reviewData: reviewData,
         timestamp: Date.now()
       });
       updateChangesUi();
@@ -1863,13 +2044,18 @@
       }
       if (retry && retry.kind !== "disconnected") {
         r = retry;
-        if (r && r.ok !== false && ZSGuard.isMutatingTool(name) && args && typeof args.path === "string") {
+        if (r && r.ok !== false && ZSGuard.isMutatingTool(name) && args && (args.path || args.file || args.filename || args.target)) {
+          const targetPath = String(args.path || args.file || args.filename || args.target);
           const prev = ZSGuard.formatDiffPreview(call);
-          sessionModifiedFiles.set(args.path, {
-            path: args.path,
+          const reviewData = ZSGuard.prepareFileReview(call, call ? call._currentContent : null);
+          sessionModifiedFiles.set(targetPath, {
+            path: targetPath,
             tool: name,
             title: prev.title,
             preview: prev.preview,
+            oldContent: call ? call._currentContent : null,
+            call: call,
+            reviewData: reviewData,
             timestamp: Date.now()
           });
           updateChangesUi();

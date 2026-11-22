@@ -449,6 +449,19 @@ const ZSGuard = (() => {
     return result;
   }
 
+  function resolveFileStatusChip(item) {
+    if (!item) return { chip: "M", text: "Diubah", cls: "zs-chip-m" };
+    const tool = String(item.tool || (item.call && item.call.tool) || "").toLowerCase();
+    const type = item.type || (item.reviewData && item.reviewData.type);
+    if (tool.includes("create") || type === "create") {
+      return { chip: "A", text: "File baru", cls: "zs-chip-a" };
+    }
+    if (tool.includes("delete") || tool.includes("remove") || tool.includes("unlink") || type === "delete") {
+      return { chip: "D", text: "Dihapus", cls: "zs-chip-d" };
+    }
+    return { chip: "M", text: "Diubah", cls: "zs-chip-m" };
+  }
+
   // ── Side-by-Side Diff & File Review Logic ─────────────────────────────────
 
   function countOccurrences(content, needle) {
@@ -998,5 +1011,6 @@ const ZSGuard = (() => {
     alignDiffRows,
     foldUnchangedRows,
     prepareFileReview,
+    resolveFileStatusChip,
   };
 })();

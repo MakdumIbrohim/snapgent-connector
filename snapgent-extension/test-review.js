@@ -254,3 +254,35 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
   ok("overlay.css styles workspace changes modal", /#zs-changes-modal\s*\{/.test(css));
 }
 
+// ── 7. Workspace Changes Redesign & Status Chips ────────────────────────────
+{
+  const chipCreate = G.resolveFileStatusChip({ tool: "create_file" });
+  ok("resolveFileStatusChip creates A chip for create_file", chipCreate.chip === "A" && chipCreate.text === "File baru" && chipCreate.cls === "zs-chip-a");
+
+  const chipEdit = G.resolveFileStatusChip({ tool: "replace_string_in_file" });
+  ok("resolveFileStatusChip creates M chip for edit", chipEdit.chip === "M" && chipEdit.text === "Diubah" && chipEdit.cls === "zs-chip-m");
+
+  const chipDelete = G.resolveFileStatusChip({ tool: "delete_file" });
+  ok("resolveFileStatusChip creates D chip for delete_file", chipDelete.chip === "D" && chipDelete.text === "Dihapus" && chipDelete.cls === "zs-chip-d");
+
+  const main = fs.readFileSync(__dirname + "/core/main.js", "utf8");
+  const css = fs.readFileSync(__dirname + "/overlay.css", "utf8");
+
+  ok("main.js calculates total adds and dels in workspace changes", /totalAdds\s*\+=/.test(main) && /totalDels\s*\+=/.test(main));
+  ok("main.js supports arrow key navigation in workspace modal", /e\.key === "ArrowDown"/.test(main) && /e\.key === "ArrowUp"/.test(main));
+  ok("main.js supports Escape key to close modal", /e\.key === "Escape"/.test(main));
+  ok("main.js supports empty state message", /Belum ada perubahan di workspace/.test(main));
+  ok("main.js supports large binary file message", /Pratinjau tidak tersedia/.test(main));
+  ok("main.js resets preview scroll to top on file switch", /scrollPane\.scrollTop = 0/.test(main));
+
+  ok("overlay.css styles workspace changes card (max 980px)", /\.zs-ws-changes-card\s*\{[^}]*max\(980px|\.zs-ws-changes-card\s*\{[^}]*980px/.test(css));
+  ok("overlay.css styles workspace header", /\.zs-ws-header\s*\{/.test(css));
+  ok("overlay.css styles workspace tree sidebar (260px)", /\.zs-ws-tree-sidebar\s*\{[^}]*260px/.test(css));
+  ok("overlay.css styles status chips M, A, D", /\.zs-ws-chip\s*\{/.test(css) && /\.zs-chip-m\s*\{/.test(css));
+  ok("overlay.css styles active tree file selection indicator", /\.zs-ws-tree-file\.active\s*\{/.test(css));
+  ok("overlay.css styles sticky column headers (Sebelum, Sesudah)", /\.zs-diff-col-headers\s*\{/.test(css));
+  ok("overlay.css styles workspace footer", /\.zs-ws-footer\s*\{/.test(css));
+  ok("overlay.css styles responsive under 700px", /@media\s*\(max-width:\s*700px\)/.test(css));
+}
+
+
