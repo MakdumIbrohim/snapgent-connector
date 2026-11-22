@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -604,6 +605,7 @@ def main(
     launch_figcraft: bool = False,
     launch_effectcraft: bool = False,
     launch_wordcraft: bool = False,
+    restart_wordcraft: bool = False,
 ) -> int:
     if sys.platform not in {"darwin", "linux"}:
         print("ERROR: setup-config.py supports macOS and Linux.", file=sys.stderr)
@@ -753,9 +755,24 @@ def main(
             )
             if (
                 control_port is None
+                and wordcraft_running
+                and restart_wordcraft
+                and wordcraft_app
+            ):
+                print("Restarting WordCraft with control channel enabled...")
+                for pid, _ in _wordcraft_processes(wordcraft_app):
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except OSError:
+                        pass
+                time.sleep(1.0)
+                wordcraft_running = False
+
+            if (
+                control_port is None
                 and not wordcraft_running
                 and wordcraft_app
-                and launch_wordcraft
+                and (launch_wordcraft or restart_wordcraft)
             ):
                 candidate_port = _available_port()
                 if _start_wordcraft_control(wordcraft_app, candidate_port):
@@ -771,8 +788,8 @@ def main(
                     "It will not be restarted; its MCP entry will run headless."
                 )
                 print(
-                    "Save your work, close WordCraft, then run the Open WordCraft for "
-                    "Snapgent helper."
+                    "To restart WordCraft with control enabled, run: "
+                    "./open-wordcraft-for-snapgent.sh --restart"
                 )
             elif control_port is None:
                 print("WordCraft desktop app was not found; its MCP entry will run headless.")
@@ -838,11 +855,18 @@ if __name__ == "__main__":
         action="store_true",
         help="start WordCraft in control mode if it is not already running",
     )
+    parser.add_argument(
+        "--restart-wordcraft",
+        "--restart",
+        action="store_true",
+        help="restart WordCraft in control mode if it is already running without control channel",
+    )
     arguments = parser.parse_args()
     raise SystemExit(
         main(
             launch_figcraft=arguments.launch_figcraft,
             launch_effectcraft=arguments.launch_effectcraft,
             launch_wordcraft=arguments.launch_wordcraft,
+            restart_wordcraft=arguments.restart_wordcraft,
         )
     )

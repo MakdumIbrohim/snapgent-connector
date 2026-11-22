@@ -432,6 +432,46 @@ class SetupConfigTests(unittest.TestCase):
         )
         start_app.assert_called_once_with(app, 54321)
 
+    def test_setup_restarts_wordcraft_when_requested(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            cli = Path(temp_dir) / "wordcraft-cli"
+            app = Path(temp_dir) / "wordcraft"
+            config_path.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+            with patch.object(setup_config.sys, "platform", "linux"), patch.object(
+                setup_config, "CONFIG_PATH", config_path
+            ), patch.object(
+                setup_config, "_roblox_studio_mcp", return_value=None
+            ), patch.object(
+                setup_config, "_effectcraft_cli", return_value=None
+            ), patch.object(
+                setup_config, "_effectcraft_app", return_value=None
+            ), patch.object(
+                setup_config, "_figcraft_cli", return_value=None
+            ), patch.object(
+                setup_config, "_wordcraft_cli", return_value=(cli, ["mcp"])
+            ), patch.object(
+                setup_config, "_wordcraft_app", return_value=app
+            ), patch.object(
+                setup_config, "_wordcraft_processes", return_value=[(999, "/usr/bin/wordcraft")]
+            ), patch.object(
+                setup_config.os, "kill"
+            ) as mock_kill, patch.object(
+                setup_config, "_available_port", return_value=54321
+            ), patch.object(
+                setup_config, "_start_wordcraft_control", return_value=True
+            ) as start_app:
+                result = setup_config.main(restart_wordcraft=True)
+            configured = json.loads(config_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            configured["mcpServers"]["wordcraft"]["args"],
+            ["mcp", "--connect", "127.0.0.1:54321"],
+        )
+        mock_kill.assert_called_once_with(999, setup_config.signal.SIGTERM)
+        start_app.assert_called_once_with(app, 54321)
+
 
 if __name__ == "__main__":
     unittest.main()

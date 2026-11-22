@@ -17,7 +17,7 @@ if [ -z "$PY" ]; then
     exit 1
 fi
 
-"$PY" ./setup-config.py --launch-wordcraft
+"$PY" ./setup-config.py --launch-wordcraft "$@"
 result=$?
 if [ "$result" -ne 0 ]; then
     echo "WordCraft setup failed. Review the error above, then try again."
