@@ -129,6 +129,77 @@ def _figcraft_app(cli: Path, cli_args: List[str]) -> Optional[Path]:
     return None
 
 
+def _wordcraft_cli(
+    configured: Optional[Dict[str, object]]
+) -> Optional[Tuple[Path, List[str]]]:
+    candidates: List[Path] = []
+    configured_command = configured.get("command") if configured else None
+    if isinstance(configured_command, str) and configured_command:
+        configured_path = Path(configured_command).expanduser()
+        if configured_path.is_absolute():
+            candidates.append(configured_path)
+        else:
+            found = shutil.which(configured_command)
+            if found:
+                candidates.append(Path(found))
+
+    on_path = shutil.which("wordcraft-cli")
+    if on_path:
+        candidates.append(Path(on_path))
+
+    home = Path.home()
+    candidates.extend(
+        [
+            Path("/opt/homebrew/bin/wordcraft-cli"),
+            Path("/usr/local/bin/wordcraft-cli"),
+            Path("/usr/bin/wordcraft-cli"),
+            home / "bin" / "wordcraft-cli",
+            home / ".local" / "bin" / "wordcraft-cli",
+            home / ".cargo" / "bin" / "wordcraft-cli",
+        ]
+    )
+    cli = _first_executable(candidates)
+    if cli:
+        if cli.suffix.lower() == ".appimage":
+            return cli, ["cli", "mcp"]
+        return cli, ["mcp"]
+
+    if sys.platform != "darwin":
+        appimage = _first_executable(
+            [
+                home / "Applications" / "WordCraft.AppImage",
+                home / "Applications" / "WordCraft" / "WordCraft.AppImage",
+                Path("/opt/WordCraft/WordCraft.AppImage"),
+            ]
+        )
+        if appimage:
+            return appimage, ["cli", "mcp"]
+    return None
+
+
+def _wordcraft_app(cli: Path, cli_args: List[str]) -> Optional[Path]:
+    if cli_args[:1] == ["cli"]:
+        return cli
+    sibling = cli.with_name("wordcraft")
+    if _is_executable(sibling):
+        return sibling.resolve()
+    found = shutil.which("wordcraft")
+    if found:
+        return Path(found).resolve()
+    home = Path.home()
+    cargo_bin = home / ".cargo" / "bin" / "wordcraft"
+    if _is_executable(cargo_bin):
+        return cargo_bin.resolve()
+    if sys.platform == "darwin":
+        for candidate in (
+            Path("/Applications/WordCraft.app"),
+            Path.home() / "Applications" / "WordCraft.app",
+        ):
+            if candidate.is_dir():
+                return candidate
+    return None
+
+
 def _roblox_studio_mcp() -> Optional[Path]:
     override = os.environ.get("ZS_STUDIO_MCP_PATH")
     candidates = [Path(override).expanduser()] if override else []
@@ -385,6 +456,129 @@ def _figcraft_base_args(
     return arguments if arguments[: len(detected_args)] == detected_args else list(detected_args)
 
 
+def _is_wordcraft_process(command: str, app: Optional[Path] = None) -> bool:
+    lowered = command.lower().replace("\\", "/")
+    try:
+        arguments = shlex.split(command)
+    except ValueError:
+        arguments = command.split()
+    if "mcp" in arguments:
+        return False
+    if app and str(app).lower().replace("\\", "/") in lowered:
+        return True
+    return bool(
+        re.search(r"(?:^|[/\s])wordcraft(?:\.appimage)?(?:$|[\s])", lowered)
+        or "wordcraft.app/contents/macos/" in lowered
+    )
+
+
+def _wordcraft_processes(app: Optional[Path]) -> List[Tuple[int, str]]:
+    try:
+        result = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        raise RuntimeError(f"Could not inspect running WordCraft processes: {error}") from error
+    if result.returncode:
+        detail = result.stderr.strip() or "ps exited with a non-zero status"
+        raise RuntimeError(f"Could not inspect running WordCraft processes: {detail}")
+
+    processes = []
+    for line in result.stdout.splitlines():
+        fields = line.strip().split(None, 1)
+        if len(fields) != 2:
+            continue
+        try:
+            pid = int(fields[0])
+        except ValueError:
+            continue
+        if pid != os.getpid() and _is_wordcraft_process(fields[1], app):
+            processes.append((pid, fields[1]))
+    return processes
+
+
+def _running_wordcraft_control_port(
+    app: Optional[Path],
+) -> Tuple[Optional[int], bool]:
+    processes = _wordcraft_processes(app)
+    ports = [
+        port
+        for _, command in processes
+        if (port := _control_port(command)) is not None
+    ]
+    if not ports:
+        return None, bool(processes)
+
+    for _ in range(60):
+        for port in ports:
+            if _port_listening(port):
+                print(f"WordCraft control channel is already listening on port {port}.")
+                return port, True
+        time.sleep(0.5)
+    print("WordCraft was started with a control port, but the port is not responding.")
+    return None, True
+
+
+def _start_wordcraft_control(app: Path, port: int) -> bool:
+    print(f"Starting WordCraft control channel on port {port}...")
+    try:
+        if sys.platform == "darwin" and app.suffix.lower() == ".app":
+            subprocess.Popen(
+                ["open", "-a", str(app), "--args", "--control", str(port)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        else:
+            subprocess.Popen(
+                [str(app), "--control", str(port)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+    except OSError as error:
+        print(f"Could not start WordCraft control channel: {error}")
+        return False
+
+    for _ in range(60):
+        if _port_listening(port):
+            print(f"WordCraft control channel is ready on port {port}.")
+            return True
+        time.sleep(0.5)
+    print(f"WordCraft did not open its control channel on port {port}.")
+    return False
+
+
+def _wordcraft_base_args(
+    detected_args: List[str], existing_server: Optional[Dict[str, object]]
+) -> List[str]:
+    existing_args = existing_server.get("args") if existing_server else None
+    if not isinstance(existing_args, list) or not all(
+        isinstance(argument, str) for argument in existing_args
+    ):
+        return list(detected_args)
+    if existing_args[: len(detected_args)] != detected_args:
+        return list(detected_args)
+
+    arguments = []
+    index = 0
+    while index < len(existing_args):
+        argument = existing_args[index]
+        if argument == "--connect":
+            index += 2
+        elif argument.startswith("--connect="):
+            index += 1
+        else:
+            arguments.append(argument)
+            index += 1
+    return arguments if arguments[: len(detected_args)] == detected_args else list(detected_args)
+
+
 def _load_config() -> Dict[str, object]:
     if not CONFIG_PATH.exists():
         return {"mcpServers": {}}
@@ -407,7 +601,9 @@ def _set_server(
 
 
 def main(
-    launch_figcraft: bool = False, launch_effectcraft: bool = False
+    launch_figcraft: bool = False,
+    launch_effectcraft: bool = False,
+    launch_wordcraft: bool = False,
 ) -> int:
     if sys.platform not in {"darwin", "linux"}:
         print("ERROR: setup-config.py supports macOS and Linux.", file=sys.stderr)
@@ -541,6 +737,68 @@ def main(
                 "https://github.com/storytold/figcraft/releases to enable its MCP."
             )
 
+        existing_wordcraft = servers.get("wordcraft")
+        existing_wordcraft_server = (
+            existing_wordcraft if isinstance(existing_wordcraft, dict) else None
+        )
+        wordcraft = _wordcraft_cli(existing_wordcraft_server)
+        if wordcraft:
+            wordcraft_path, detected_args = wordcraft
+            wordcraft_app = _wordcraft_app(wordcraft_path, detected_args)
+            wordcraft_args = _wordcraft_base_args(
+                detected_args, existing_wordcraft_server
+            )
+            control_port, wordcraft_running = _running_wordcraft_control_port(
+                wordcraft_app
+            )
+            if (
+                control_port is None
+                and not wordcraft_running
+                and wordcraft_app
+                and launch_wordcraft
+            ):
+                candidate_port = _available_port()
+                if _start_wordcraft_control(wordcraft_app, candidate_port):
+                    control_port = candidate_port
+            elif control_port is None and not wordcraft_running and wordcraft_app:
+                print(
+                    "WordCraft is not running and will stay closed. "
+                    "Use the Open WordCraft for Snapgent launcher when you want to connect it."
+                )
+            elif control_port is None and wordcraft_running:
+                print(
+                    "WordCraft is already open without a reachable control channel. "
+                    "It will not be restarted; its MCP entry will run headless."
+                )
+                print(
+                    "Save your work, close WordCraft, then run the Open WordCraft for "
+                    "Snapgent helper."
+                )
+            elif control_port is None:
+                print("WordCraft desktop app was not found; its MCP entry will run headless.")
+
+            if control_port is not None:
+                wordcraft_args.extend(["--connect", f"127.0.0.1:{control_port}"])
+
+            if existing_wordcraft_server:
+                existing_wordcraft_server["command"] = str(wordcraft_path)
+                existing_wordcraft_server["args"] = wordcraft_args
+                existing_wordcraft_server.setdefault("env", {})
+            else:
+                _set_server(servers, "wordcraft", str(wordcraft_path), wordcraft_args)
+            print(f"WordCraft MCP detected: {wordcraft_path}")
+        elif isinstance(existing_wordcraft, dict):
+            print(
+                "Configured WordCraft MCP executable was not found: "
+                f"{existing_wordcraft.get('command', '')}"
+            )
+            print("Update mcpServers.wordcraft.command in config.json to match your installation.")
+        else:
+            print(
+                "WordCraft not found; install it from "
+                "https://github.com/storytold/wordcraft to enable its MCP."
+            )
+
         uvx_path = shutil.which("uvx")
         if uvx_path:
             _set_server(
@@ -575,10 +833,16 @@ if __name__ == "__main__":
         action="store_true",
         help="start EffectCraft in control mode if it is not already running",
     )
+    parser.add_argument(
+        "--launch-wordcraft",
+        action="store_true",
+        help="start WordCraft in control mode if it is not already running",
+    )
     arguments = parser.parse_args()
     raise SystemExit(
         main(
             launch_figcraft=arguments.launch_figcraft,
             launch_effectcraft=arguments.launch_effectcraft,
+            launch_wordcraft=arguments.launch_wordcraft,
         )
     )

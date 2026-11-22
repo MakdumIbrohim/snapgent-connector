@@ -300,6 +300,138 @@ class SetupConfigTests(unittest.TestCase):
         self.assertEqual(configured["mcpServers"]["figcraft"]["args"], ["mcp"])
         start_app.assert_not_called()
 
+    def test_linux_wordcraft_cli_is_discovered_from_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cli = Path(temp_dir) / "wordcraft-cli"
+            cli.write_text("#!/bin/sh\n", encoding="utf-8")
+            cli.chmod(0o755)
+            with patch.object(setup_config.sys, "platform", "linux"), patch.dict(
+                os.environ, {"PATH": temp_dir}
+            ):
+                detected = setup_config._wordcraft_cli(None)
+        self.assertIsNotNone(detected)
+        self.assertEqual(detected[0], cli.resolve())
+        self.assertEqual(detected[1], ["mcp"])
+
+    def test_setup_does_not_open_wordcraft_by_default(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            cli = Path(temp_dir) / "wordcraft-cli"
+            app = Path(temp_dir) / "wordcraft"
+            config_path.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+            with patch.object(setup_config.sys, "platform", "linux"), patch.object(
+                setup_config, "CONFIG_PATH", config_path
+            ), patch.object(
+                setup_config, "_roblox_studio_mcp", return_value=None
+            ), patch.object(
+                setup_config, "_effectcraft_cli", return_value=None
+            ), patch.object(
+                setup_config, "_effectcraft_app", return_value=None
+            ), patch.object(
+                setup_config, "_figcraft_cli", return_value=None
+            ), patch.object(
+                setup_config, "_wordcraft_cli", return_value=(cli, ["mcp"])
+            ), patch.object(
+                setup_config, "_wordcraft_app", return_value=app
+            ), patch.object(
+                setup_config, "_wordcraft_processes", return_value=[]
+            ), patch.object(
+                setup_config, "_start_wordcraft_control"
+            ) as start_app:
+                result = setup_config.main()
+            configured = json.loads(config_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result, 0)
+        self.assertEqual(configured["mcpServers"]["wordcraft"]["args"], ["mcp"])
+        start_app.assert_not_called()
+
+    def test_setup_attaches_to_running_wordcraft_control_port(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            cli = Path(temp_dir) / "wordcraft-cli"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "wordcraft": {
+                                "command": str(cli),
+                                "args": ["mcp"],
+                                "env": {"TEST_ENV": "1"},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(setup_config.sys, "platform", "linux"), patch.object(
+                setup_config, "CONFIG_PATH", config_path
+            ), patch.object(
+                setup_config, "_roblox_studio_mcp", return_value=None
+            ), patch.object(
+                setup_config, "_effectcraft_cli", return_value=None
+            ), patch.object(
+                setup_config, "_effectcraft_app", return_value=None
+            ), patch.object(
+                setup_config, "_figcraft_cli", return_value=None
+            ), patch.object(
+                setup_config,
+                "_wordcraft_cli",
+                return_value=(cli, ["mcp"]),
+            ), patch.object(
+                setup_config,
+                "_wordcraft_processes",
+                return_value=[(123, "/usr/bin/wordcraft --control 43128")],
+            ), patch.object(
+                setup_config, "_port_listening", return_value=True
+            ), patch.object(setup_config, "_start_wordcraft_control") as start_app:
+                result = setup_config.main()
+            configured = json.loads(config_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            configured["mcpServers"]["wordcraft"]["args"],
+            ["mcp", "--connect", "127.0.0.1:43128"],
+        )
+        self.assertEqual(configured["mcpServers"]["wordcraft"]["env"], {"TEST_ENV": "1"})
+        start_app.assert_not_called()
+
+    def test_setup_starts_wordcraft_on_a_dynamic_control_port(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            cli = Path(temp_dir) / "wordcraft-cli"
+            app = Path(temp_dir) / "wordcraft"
+            config_path.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+            with patch.object(setup_config.sys, "platform", "linux"), patch.object(
+                setup_config, "CONFIG_PATH", config_path
+            ), patch.object(
+                setup_config, "_roblox_studio_mcp", return_value=None
+            ), patch.object(
+                setup_config, "_effectcraft_cli", return_value=None
+            ), patch.object(
+                setup_config, "_effectcraft_app", return_value=None
+            ), patch.object(
+                setup_config, "_figcraft_cli", return_value=None
+            ), patch.object(
+                setup_config, "_wordcraft_cli", return_value=(cli, ["mcp"])
+            ), patch.object(
+                setup_config, "_wordcraft_app", return_value=app
+            ), patch.object(
+                setup_config, "_wordcraft_processes", return_value=[]
+            ), patch.object(
+                setup_config, "_available_port", return_value=54321
+            ), patch.object(
+                setup_config, "_start_wordcraft_control", return_value=True
+            ) as start_app:
+                result = setup_config.main(launch_wordcraft=True)
+            configured = json.loads(config_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            configured["mcpServers"]["wordcraft"]["args"],
+            ["mcp", "--connect", "127.0.0.1:54321"],
+        )
+        start_app.assert_called_once_with(app, 54321)
+
 
 if __name__ == "__main__":
     unittest.main()

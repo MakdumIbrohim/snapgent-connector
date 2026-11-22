@@ -218,6 +218,58 @@ else {
     Write-Host "FigCraft not found; install it from https://github.com/storytold/figcraft/releases to enable its MCP."
 }
 
+$configuredWordCraft = $configuration.mcpServers.PSObject.Properties["wordcraft"] ? $configuration.mcpServers.wordcraft : $null
+$wordcraftCli = $null
+if ($configuredWordCraft -and -not [string]::IsNullOrWhiteSpace($configuredWordCraft.command)) {
+    if (Test-Path -LiteralPath $configuredWordCraft.command -PathType Leaf) {
+        $wordcraftCli = (Resolve-Path -LiteralPath $configuredWordCraft.command).Path
+    }
+}
+if (-not $wordcraftCli) {
+    $wordcraftCliCommand = Get-Command wordcraft-cli.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($wordcraftCliCommand) {
+        $wordcraftCli = $wordcraftCliCommand.Source
+    }
+}
+if (-not $wordcraftCli) {
+    $wordcraftCandidates = @(
+        (Join-Path $env:USERPROFILE ".cargo\bin\wordcraft-cli.exe"),
+        (Join-Path $env:ProgramFiles "WordCraft\wordcraft-cli.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\WordCraft\wordcraft-cli.exe")
+    )
+    $wordcraftCli = $wordcraftCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+}
+
+if ($wordcraftCli) {
+    if ($configuredWordCraft) {
+        $configuredWordCraft.command = $wordcraftCli
+        if (-not $configuredWordCraft.PSObject.Properties["args"]) {
+            $configuredWordCraft | Add-Member -MemberType NoteProperty -Name args -Value @("mcp")
+        }
+    }
+    else {
+        $wordcraftServer = [pscustomobject]@{
+            command = $wordcraftCli
+            args = @("mcp")
+            env = [pscustomobject]@{}
+        }
+        if ($configuration.mcpServers.PSObject.Properties["wordcraft"]) {
+            $configuration.mcpServers.wordcraft = $wordcraftServer
+        }
+        else {
+            $configuration.mcpServers | Add-Member -MemberType NoteProperty -Name wordcraft -Value $wordcraftServer
+        }
+    }
+    Write-Host "WordCraft MCP detected: $wordcraftCli"
+}
+elseif ($configuredWordCraft) {
+    Write-Host "Configured WordCraft MCP executable was not found: $($configuredWordCraft.command)"
+    Write-Host "Update mcpServers.wordcraft.command in config.json to match your installation."
+}
+else {
+    Write-Host "WordCraft not found; install it from https://github.com/storytold/wordcraft to enable its MCP."
+}
+
 function Test-ReaNodeVersion {
     param([string]$NodePath)
     try { $raw = (& $NodePath --version) } catch { return $false }

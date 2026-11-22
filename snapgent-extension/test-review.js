@@ -26,6 +26,12 @@ ok("execute_luau is mutating", G.isMutatingTool("execute_luau") === true);
 ok("git_commit is mutating", G.isMutatingTool("git_commit") === true);
 ok("scoped tool name vscode/write_file is mutating", G.isMutatingTool("vscode/write_file") === true);
 ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_file") === false);
+ok("wordcraft/get_text is safe", G.isMutatingTool("wordcraft/get_text") === false);
+ok("wordcraft/inspect_document is safe", G.isMutatingTool("wordcraft/inspect_document") === false);
+ok("wordcraft/type_text is mutating", G.isMutatingTool("wordcraft/type_text") === true);
+ok("wordcraft/execute is mutating", G.isMutatingTool("wordcraft/execute") === true);
+ok("wordcraft/insert_table is mutating", G.isMutatingTool("wordcraft/insert_table") === true);
+ok("wordcraft/save_document is mutating", G.isMutatingTool("wordcraft/save_document") === true);
 
 // ── 2. Format Diff Preview ──────────────────────────────────────────────────
 {
@@ -37,6 +43,27 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
   ok("write_file preview has write type", preview.type === "write");
   ok("write_file preview identifies target", preview.target === "src/app.js");
   ok("write_file preview contains content", preview.preview.includes("console.log('hello');"));
+}
+
+{
+  const typeCall = {
+    tool: "wordcraft/type_text",
+    arguments: { text: "Menulis paragraf baru..." }
+  };
+  const preview = G.formatDiffPreview(typeCall);
+  ok("wordcraft type_text preview has write type", preview.type === "write");
+  ok("wordcraft type_text preview title has WordCraft", preview.title.includes("WordCraft"));
+  ok("wordcraft type_text preview contains text", preview.preview.includes("Menulis paragraf baru..."));
+}
+
+{
+  const tableCall = {
+    tool: "insert_table",
+    arguments: { values: [["Nama", "Nilai"], ["A", "100"]] }
+  };
+  const preview = G.formatDiffPreview(tableCall);
+  ok("wordcraft insert_table preview has write type", preview.type === "write");
+  ok("wordcraft insert_table preview title has Tabel", preview.title.includes("Tabel"));
 }
 
 {

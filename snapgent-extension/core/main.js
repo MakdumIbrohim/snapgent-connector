@@ -2795,7 +2795,7 @@
   // workspace the model could read). VS Code: the skill files are installed into
   // .snapgent/skills/ (never overwriting) and the model reads them on demand.
   const ANTISLOP_KEY = "zsAntislopEnabled";
-  const ANTISLOP_TARGETS = ["word", "vscode"];
+  const ANTISLOP_TARGETS = ["word", "vscode", "wordcraft"];
   let antislopEnabled = false; // off until the user turns it on
   try {
     chrome.storage.local.get(ANTISLOP_KEY, (r) => { antislopEnabled = !!(r && r[ANTISLOP_KEY]); });
@@ -2807,7 +2807,7 @@
     return typeof ZS_ANTISLOP === "undefined" ? [] : Object.keys(ZS_ANTISLOP.vscode);
   }
   function antislopWordRules() {
-    return selectedTargetId === "word" && antislopEnabled && typeof ZS_ANTISLOP !== "undefined" ? ZS_ANTISLOP.word : "";
+    return (selectedTargetId === "word" || selectedTargetId === "wordcraft") && antislopEnabled && typeof ZS_ANTISLOP !== "undefined" ? ZS_ANTISLOP.word : "";
   }
   // Returns { ok:true } or { ok:false, error }. Installing never overwrites an existing skill.
   async function setAntislopEnabled(on) {
@@ -4398,6 +4398,7 @@
       if (id === "roblox") return "Roblox Studio";
       if (id === "vscode") return "VS Code";
       if (id === "effectcraft") return "EffectCraft";
+      if (id === "wordcraft") return "WordCraft";
       const server = mergedMcpServers().find((item) => item.id === id);
       return server ? server.name : id;
     }
@@ -4411,8 +4412,9 @@
         { id: "vscode", name: "VS Code" },
         { id: "roblox", name: "Roblox Studio" },
         { id: "effectcraft", name: "EffectCraft" },
+        { id: "wordcraft", name: "WordCraft" },
         ...mergedMcpServers()
-          .filter((server) => !["vscode", "roblox", "effectcraft"].includes(server.id))
+          .filter((server) => !["vscode", "roblox", "effectcraft", "wordcraft"].includes(server.id))
           .map((server) => ({ id: server.id, name: getTargetName(server.id) })),
       ].filter((option) => option.id === "none" || isMcpEnabled(option.id));
       if (!options.some((option) => option.id === id)) {
@@ -4485,6 +4487,7 @@
         { id: "vscode", name: "VS Code" },
         { id: "roblox", name: "Roblox Studio" },
         { id: "effectcraft", name: "EffectCraft" },
+        { id: "wordcraft", name: "WordCraft" },
       ];
       const extra = mergedMcpServers()
         .filter((s) => !base.some((b) => b.id === s.id))

@@ -311,7 +311,9 @@ const ZSGuard = (() => {
     "read_file", "list_dir", "grep_search", "find_by_name", "find_files",
     "git_status", "git_diff", "git_log", "git_branches",
     "list_commands", "list_tools", "list_mcp_servers",
-    "inspect_instance", "get_studio_state", "search_game_tree", "script_read", "get_outline"
+    "inspect_instance", "get_studio_state", "search_game_tree", "script_read", "get_outline",
+    // WordCraft safe read-only tools
+    "get_text", "inspect_document", "list_documents", "render_page", "screenshot", "ui_inspect", "parity"
   ]);
 
   function isMutatingTool(name) {
@@ -379,6 +381,62 @@ const ZSGuard = (() => {
         target: "git",
         title: `Git Commit`,
         preview: `Commit message: ${args.message || "(empty)"}`
+      };
+    }
+    if (bare === "type_text") {
+      const text = String(args.text || "");
+      const targetDoc = args.doc != null ? `Dokumen #${args.doc}` : "Dokumen Aktif";
+      return {
+        type: "write",
+        target: targetDoc,
+        title: `WordCraft: Ketik Teks (${targetDoc})`,
+        preview: text
+      };
+    }
+    if (bare === "execute") {
+      const cmd = String(args.command || "");
+      const cmdParams = args.params ? JSON.stringify(args.params, null, 2) : "";
+      return {
+        type: "generic",
+        target: cmd,
+        title: `WordCraft: Jalankan ${cmd}`,
+        preview: cmdParams ? `${cmd}\n${cmdParams}` : cmd
+      };
+    }
+    if (bare === "insert_table") {
+      const targetDoc = args.doc != null ? `Dokumen #${args.doc}` : "Dokumen Aktif";
+      return {
+        type: "write",
+        target: targetDoc,
+        title: `WordCraft: Sisipkan Tabel (${targetDoc})`,
+        preview: JSON.stringify(args.values || [], null, 2)
+      };
+    }
+    if (bare === "save_document") {
+      const savePath = String(args.path || "dokumen");
+      return {
+        type: "write",
+        target: savePath,
+        title: `WordCraft: Simpan Dokumen`,
+        preview: `Simpan ke: ${savePath}`
+      };
+    }
+    if (bare === "new_document") {
+      const tmpl = String(args.template || "blank");
+      return {
+        type: "write",
+        target: tmpl,
+        title: `WordCraft: Dokumen Baru (${tmpl})`,
+        preview: `Template: ${tmpl}`
+      };
+    }
+    if (bare === "batch") {
+      const targetDoc = args.doc != null ? `Dokumen #${args.doc}` : "Dokumen Aktif";
+      return {
+        type: "generic",
+        target: targetDoc,
+        title: `WordCraft: Jalankan Kumpulan Perintah (${targetDoc})`,
+        preview: JSON.stringify(args.commands || [], null, 2)
       };
     }
     return {
