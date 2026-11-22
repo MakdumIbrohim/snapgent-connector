@@ -118,7 +118,100 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
     grouped.some((g) => g.folder === "src/components/" && g.files.length === 2));
 }
 
-// ── 5. Main & CSS Wiring Checks ─────────────────────────────────────────────
+// ── 5. Five Verification Cases for Diff Review ─────────────────────────────
+{
+  // Kasus 1: File Baru
+  const callNew = {
+    tool: "create_file",
+    arguments: { path: "src/new.js", content: "console.log('line 1');\nconsole.log('line 2');" }
+  };
+  const resNew = G.prepareFileReview(callNew, null);
+  ok("Kasus 1: file baru title Agen ingin membuat file ini", resNew.title === "Agen ingin membuat file ini");
+  ok("Kasus 1: file baru isSinglePanel is true", resNew.isSinglePanel === true);
+  ok("Kasus 1: file baru canApprove is true", resNew.canApprove === true);
+  ok("Kasus 1: file baru addCount is 2 and delCount is 0", resNew.addCount === 2 && resNew.delCount === 0);
+  ok("Kasus 1: file baru statusBadge is File baru", resNew.statusBadge === "File baru");
+
+  // Kasus 2: Satu baris diubah
+  const currSingle = "console.log('hello');";
+  const callSingle = {
+    tool: "replace_string_in_file",
+    arguments: { path: "src/single.js", old_string: "console.log('hello');", new_string: "console.log('world');" }
+  };
+  const resSingle = G.prepareFileReview(callSingle, currSingle);
+  ok("Kasus 2: satu baris diubah title Agen ingin mengubah file ini", resSingle.title === "Agen ingin mengubah file ini");
+  ok("Kasus 2: satu baris diubah addCount is 1 and delCount is 1", resSingle.addCount === 1 && resSingle.delCount === 1);
+  ok("Kasus 2: satu baris diubah has modify row with word diff", resSingle.items.some(r => r.kind === "modify" && r.left.words.some(w => w.text === "hello" && w.changed) && r.right.words.some(w => w.text === "world" && w.changed)));
+  ok("Kasus 2: canApprove is true", resSingle.canApprove === true);
+
+  // Kasus 3: Hapus dan tambah sekaligus (seperti gambar)
+  const currMixed = [
+    "",
+    "[hasil]",
+    "Status awal: belum diuji",
+    "Status: tes tulis file berhasil.",
+    "Catatan: hapus baris ini nanti",
+    "",
+    "[akhir]"
+  ].join("\n");
+  const oldBlock = "Status: tes tulis file berhasil.\nCatatan: hapus baris ini nanti";
+  const newBlock = "Status: tes EDIT file berhasil - baris ini sudah diubah.\nDiedit oleh: snapgentV3";
+  const callMixed = {
+    tool: "replace_string_in_file",
+    arguments: { path: "test-snapgent.txt", old_string: oldBlock, new_string: newBlock }
+  };
+  const resMixed = G.prepareFileReview(callMixed, currMixed);
+  ok("Kasus 3: hapus dan tambah sekaligus title Agen ingin mengubah file ini", resMixed.title === "Agen ingin mengubah file ini");
+  ok("Kasus 3: hapus dan tambah sekaligus addCount is 2 and delCount is 2", resMixed.addCount === 2 && resMixed.delCount === 2);
+  ok("Kasus 3: canApprove is true", resMixed.canApprove === true);
+  ok("Kasus 3: contains both modified row and add/del aligned rows", resMixed.items.some(r => r.kind === "modify") && resMixed.items.some(r => r.kind === "add"));
+
+  // Kasus 4: old_text tidak ditemukan
+  const callNotFound = {
+    tool: "replace_string_in_file",
+    arguments: { path: "test.txt", old_string: "teks_yang_tidak_ada", new_string: "baru" }
+  };
+  const resNotFound = G.prepareFileReview(callNotFound, "isi file yang ada di disk");
+  ok("Kasus 4: old_text tidak ditemukan canApprove is false", resNotFound.canApprove === false);
+  ok("Kasus 4: old_text tidak ditemukan has clear error", resNotFound.error.includes("tidak ditemukan"));
+
+  // Kasus 4b: old_text muncul lebih dari sekali
+  const callMulti = {
+    tool: "replace_string_in_file",
+    arguments: { path: "test.txt", old_string: "duplikat", new_string: "baru" }
+  };
+  const resMulti = G.prepareFileReview(callMulti, "duplikat 1 dan duplikat 2");
+  ok("Kasus 4b: old_text muncul lebih dari sekali canApprove is false", resMulti.canApprove === false);
+  ok("Kasus 4b: old_text muncul lebih dari sekali has clear error", resMulti.error.includes("lebih dari sekali"));
+
+  // Kasus 4c: tidak ada perubahan
+  const callNoChange = {
+    tool: "replace_string_in_file",
+    arguments: { path: "test.txt", old_string: "sama", new_string: "sama" }
+  };
+  const resNoChange = G.prepareFileReview(callNoChange, "teks sama di sini");
+  ok("Kasus 4c: tidak ada perubahan canApprove is false", resNoChange.canApprove === false);
+  ok("Kasus 4c: tidak ada perubahan has error Tidak ada perubahan", resNoChange.error.includes("Tidak ada perubahan"));
+
+  // Kasus 5: File panjang dengan bagian yang dilipat (> 6 baris)
+  const longOld = [];
+  for (let i = 1; i <= 15; i++) longOld.push(`line ${i}`);
+  longOld.push("target change");
+  for (let i = 17; i <= 26; i++) longOld.push(`line ${i}`);
+
+  const longOldStr = longOld.join("\n");
+  const callLong = {
+    tool: "replace_string_in_file",
+    arguments: { path: "long.txt", old_string: "target change", new_string: "target changed" }
+  };
+  const resLong = G.prepareFileReview(callLong, longOldStr);
+  ok("Kasus 5: file panjang menghasilkan item fold", resLong.items.some(r => r.type === "fold"));
+  const foldItem = resLong.items.find(r => r.type === "fold");
+  ok("Kasus 5: item fold memiliki count dan hidden rows", foldItem.count > 0 && foldItem.rows.length === foldItem.count);
+  ok("Kasus 5: menyisakan 3 baris konteks sebelum perubahan", resLong.items.filter(r => r.type === "row" && r.kind === "equal").length >= 3);
+}
+
+// ── 6. Main & CSS Wiring Checks ─────────────────────────────────────────────
 {
   const main = fs.readFileSync(__dirname + "/core/main.js", "utf8");
   const css = fs.readFileSync(__dirname + "/overlay.css", "utf8");
@@ -141,8 +234,11 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
 
   ok("overlay.css styles review modal", /#zs-review-modal\s*\{/.test(css));
   ok("overlay.css styles review dialog card", /\.zs-review-card\s*\{/.test(css));
-  ok("overlay.css styles review code box", /\.zs-review-code-box\s*\{/.test(css));
-  ok("overlay.css styles overwrite badge pill", /\.zs-review-overwrite-pill\s*\{/.test(css));
+  ok("overlay.css styles side-by-side diff box", /\.zs-diff-box\s*\{/.test(css));
+  ok("overlay.css styles side-by-side scroll", /\.zs-diff-scroll\s*\{/.test(css));
+  ok("overlay.css styles diff fold bar", /\.zs-diff-fold-bar\s*\{/.test(css));
+  ok("overlay.css styles word diff del and add", /\.zs-word-del\s*\{/.test(css) && /\.zs-word-add\s*\{/.test(css));
+  ok("overlay.css styles responsive under 600px", /@media\s*\(max-width:\s*600px\)/.test(css));
   ok("overlay.css styles session switch toggle", /\.zs-review-switch\s*\{/.test(css));
   ok("overlay.css styles outline reject button", /\.zs-review-btn-outline\s*\{/.test(css));
   ok("overlay.css styles solid approve button", /\.zs-review-btn-solid\s*\{/.test(css));

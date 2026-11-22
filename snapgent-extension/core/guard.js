@@ -445,6 +445,484 @@ const ZSGuard = (() => {
     return result;
   }
 
+  // ── Side-by-Side Diff & File Review Logic ─────────────────────────────────
+
+  function countOccurrences(content, needle) {
+    if (!needle) return 0;
+    let count = 0;
+    let pos = 0;
+    while ((pos = content.indexOf(needle, pos)) !== -1) {
+      count++;
+      pos += needle.length;
+    }
+    return count;
+  }
+
+  function computeWordDiff(leftStr, rightStr) {
+    const leftTokens = leftStr.match(/\s+|[^\s\w]+|\w+/g) || [];
+    const rightTokens = rightStr.match(/\s+|[^\s\w]+|\w+/g) || [];
+
+    const m = leftTokens.length;
+    const n = rightTokens.length;
+    const dp = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+    for (let i = 0; i < m; i++) {
+      for (let j = 0; j < n; j++) {
+        if (leftTokens[i] === rightTokens[j]) {
+          dp[i + 1][j + 1] = dp[i][j] + 1;
+        } else {
+          dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+    }
+
+    let i = m;
+    let j = n;
+    const leftWords = [];
+    const rightWords = [];
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && leftTokens[i - 1] === rightTokens[j - 1]) {
+        leftWords.push({ text: leftTokens[i - 1], changed: false });
+        rightWords.push({ text: rightTokens[j - 1], changed: false });
+        i--;
+        j--;
+      } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+        rightWords.push({ text: rightTokens[j - 1], changed: true });
+        j--;
+      } else {
+        leftWords.push({ text: leftTokens[i - 1], changed: true });
+        i--;
+      }
+    }
+    leftWords.reverse();
+    rightWords.reverse();
+    return { leftWords, rightWords };
+  }
+
+  function computeLineDiff(oldLines, newLines) {
+    const m = oldLines.length;
+    const n = newLines.length;
+    const dp = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+    for (let i = 0; i < m; i++) {
+      for (let j = 0; j < n; j++) {
+        if (oldLines[i] === newLines[j]) {
+          dp[i + 1][j + 1] = dp[i][j] + 1;
+        } else {
+          dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+    }
+
+    let i = m;
+    let j = n;
+    const edits = [];
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+        edits.push({ type: "equal", oldLine: oldLines[i - 1], newLine: newLines[j - 1], oldIdx: i, newIdx: j });
+        i--;
+        j--;
+      } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+        edits.push({ type: "add", newLine: newLines[j - 1], newIdx: j });
+        j--;
+      } else {
+        edits.push({ type: "delete", oldLine: oldLines[i - 1], oldIdx: i });
+        i--;
+      }
+    }
+    edits.reverse();
+    return edits;
+  }
+
+  function lineSimilarity(lineA, lineB) {
+    const wordsA = new Set((lineA.toLowerCase().match(/\w+/g) || []));
+    const wordsB = lineB.toLowerCase().match(/\w+/g) || [];
+    if (wordsA.size === 0 || wordsB.length === 0) return 0;
+    let matches = 0;
+    for (const w of wordsB) {
+      if (wordsA.has(w)) matches++;
+    }
+    return matches / Math.max(wordsA.size, wordsB.length);
+  }
+
+  function alignDiffRows(edits) {
+    const rows = [];
+    let idx = 0;
+    while (idx < edits.length) {
+      const edit = edits[idx];
+      if (edit.type === "equal") {
+        rows.push({
+          kind: "equal",
+          left: { lineNo: edit.oldIdx, sign: "", text: edit.oldLine, words: [{ text: edit.oldLine, changed: false }] },
+          right: { lineNo: edit.newIdx, sign: "", text: edit.newLine, words: [{ text: edit.newLine, changed: false }] },
+        });
+        idx++;
+      } else {
+        const deletes = [];
+        const adds = [];
+        while (idx < edits.length && edits[idx].type !== "equal") {
+          if (edits[idx].type === "delete") deletes.push(edits[idx]);
+          else if (edits[idx].type === "add") adds.push(edits[idx]);
+          idx++;
+        }
+
+        // Pair up deletes and adds that share similar content into "modify"
+        const pairedAdds = new Set();
+        const pairedDeletes = new Set();
+
+        for (let dIdx = 0; dIdx < deletes.length; dIdx++) {
+          let bestAddIdx = -1;
+          let bestSim = 0.24; // Threshold
+          for (let aIdx = 0; aIdx < adds.length; aIdx++) {
+            if (pairedAdds.has(aIdx)) continue;
+            const sim = lineSimilarity(deletes[dIdx].oldLine, adds[aIdx].newLine);
+            if (sim > bestSim) {
+              bestSim = sim;
+              bestAddIdx = aIdx;
+            }
+          }
+          if (bestAddIdx !== -1) {
+            pairedDeletes.add(dIdx);
+            pairedAdds.add(bestAddIdx);
+            const d = deletes[dIdx];
+            const a = adds[bestAddIdx];
+            const { leftWords, rightWords } = computeWordDiff(d.oldLine, a.newLine);
+            rows.push({
+              kind: "modify",
+              left: { lineNo: d.oldIdx, sign: "−", text: d.oldLine, words: leftWords },
+              right: { lineNo: a.newIdx, sign: "+", text: a.newLine, words: rightWords },
+            });
+          } else {
+            const d = deletes[dIdx];
+            rows.push({
+              kind: "delete",
+              left: { lineNo: d.oldIdx, sign: "−", text: d.oldLine, words: [{ text: d.oldLine, changed: false }] },
+              right: null,
+            });
+          }
+        }
+
+        for (let aIdx = 0; aIdx < adds.length; aIdx++) {
+          if (!pairedAdds.has(aIdx)) {
+            const a = adds[aIdx];
+            rows.push({
+              kind: "add",
+              left: null,
+              right: { lineNo: a.newIdx, sign: "+", text: a.newLine, words: [{ text: a.newLine, changed: false }] },
+            });
+          }
+        }
+      }
+    }
+    return rows;
+  }
+
+  function foldUnchangedRows(rows) {
+    const result = [];
+    let i = 0;
+    let foldSeq = 0;
+    const hasChangeBefore = () => result.some((r) => r.type === "row" && r.kind !== "equal");
+
+    while (i < rows.length) {
+      if (rows[i].kind !== "equal") {
+        result.push({ type: "row", ...rows[i] });
+        i++;
+        continue;
+      }
+
+      // Collect contiguous equal rows
+      const eqStart = i;
+      while (i < rows.length && rows[i].kind === "equal") {
+        i++;
+      }
+      const eqRows = rows.slice(eqStart, i);
+      const L = eqRows.length;
+
+      // Has changes after this block?
+      let changeAfter = false;
+      for (let k = i; k < rows.length; k++) {
+        if (rows[k].kind !== "equal") {
+          changeAfter = true;
+          break;
+        }
+      }
+      const changeBefore = hasChangeBefore();
+
+      if (L <= 6) {
+        for (const r of eqRows) result.push({ type: "row", ...r });
+      } else {
+        // More than 6 unchanged lines: fold with 3 lines of context around changes
+        if (!changeBefore && changeAfter) {
+          // Beginning of file before first change: keep last 3 lines, fold the preceding L - 3 lines
+          const foldCount = L - 3;
+          const foldItems = eqRows.slice(0, foldCount);
+          const keepItems = eqRows.slice(foldCount);
+          result.push({ type: "fold", foldId: `f_${++foldSeq}`, count: foldCount, rows: foldItems });
+          for (const r of keepItems) result.push({ type: "row", ...r });
+        } else if (changeBefore && !changeAfter) {
+          // End of file after last change: keep first 3 lines, fold the trailing L - 3 lines
+          const keepItems = eqRows.slice(0, 3);
+          const foldCount = L - 3;
+          const foldItems = eqRows.slice(3);
+          for (const r of keepItems) result.push({ type: "row", ...r });
+          result.push({ type: "fold", foldId: `f_${++foldSeq}`, count: foldCount, rows: foldItems });
+        } else if (changeBefore && changeAfter) {
+          // In between two changes: keep first 3 and last 3 lines, fold middle L - 6 lines
+          const keepHead = eqRows.slice(0, 3);
+          const foldCount = L - 6;
+          const foldItems = eqRows.slice(3, 3 + foldCount);
+          const keepTail = eqRows.slice(3 + foldCount);
+          for (const r of keepHead) result.push({ type: "row", ...r });
+          result.push({ type: "fold", foldId: `f_${++foldSeq}`, count: foldCount, rows: foldItems });
+          for (const r of keepTail) result.push({ type: "row", ...r });
+        } else {
+          // No changes at all in entire file
+          result.push({ type: "fold", foldId: `f_${++foldSeq}`, count: L, rows: eqRows });
+        }
+      }
+    }
+    return result;
+  }
+
+  function prepareFileReview(call, currentContent) {
+    if (!call || typeof call !== "object") {
+      return {
+        type: "unknown",
+        target: "",
+        title: "Aksi Agen",
+        statusBadge: "",
+        addCount: 0,
+        delCount: 0,
+        error: null,
+        noChanges: false,
+        canApprove: true,
+        isSinglePanel: false,
+        items: [],
+      };
+    }
+    const tool = String(call.tool || call.command || "");
+    const bare = tool.split("/").pop().toLowerCase().trim();
+    const args = (call.arguments != null ? call.arguments : call.params) || {};
+    const target = String(args.path || args.file || args.filename || args.command || args.target || "");
+
+    // 1. replace_string_in_file
+    if (bare === "replace_string_in_file") {
+      const oldText = String(args.old_string != null ? args.old_string : (args.old_text != null ? args.old_text : ""));
+      const newText = String(args.new_string != null ? args.new_string : (args.new_text != null ? args.new_text : ""));
+
+      if (currentContent == null) {
+        return {
+          type: "edit",
+          target,
+          title: "Agen ingin mengubah file ini",
+          statusBadge: "Perubahan ditulis ke file yang sudah ada",
+          addCount: 0,
+          delCount: 0,
+          error: "Isi file saat ini tidak dapat dibaca dari disk.",
+          noChanges: false,
+          canApprove: false,
+          isSinglePanel: false,
+          items: [],
+        };
+      }
+
+      const count = countOccurrences(currentContent, oldText);
+      if (oldText === "" || count === 0) {
+        return {
+          type: "edit",
+          target,
+          title: "Agen ingin mengubah file ini",
+          statusBadge: "Perubahan ditulis ke file yang sudah ada",
+          addCount: 0,
+          delCount: 0,
+          error: "Teks lama tidak ditemukan di dalam file.",
+          noChanges: false,
+          canApprove: false,
+          isSinglePanel: false,
+          items: [],
+        };
+      }
+      if (count > 1) {
+        return {
+          type: "edit",
+          target,
+          title: "Agen ingin mengubah file ini",
+          statusBadge: "Perubahan ditulis ke file yang sudah ada",
+          addCount: 0,
+          delCount: 0,
+          error: `Teks lama muncul lebih dari sekali di dalam file (${count} kali).`,
+          noChanges: false,
+          canApprove: false,
+          isSinglePanel: false,
+          items: [],
+        };
+      }
+
+      // Exact single occurrence: perform in-memory replacement
+      const newContent = currentContent.replace(oldText, newText);
+      if (newContent === currentContent) {
+        return {
+          type: "edit",
+          target,
+          title: "Agen ingin mengubah file ini",
+          statusBadge: "Perubahan ditulis ke file yang sudah ada",
+          addCount: 0,
+          delCount: 0,
+          error: "Tidak ada perubahan",
+          noChanges: true,
+          canApprove: false,
+          isSinglePanel: false,
+          items: [],
+        };
+      }
+
+      const oldLines = currentContent.split("\n");
+      const newLines = newContent.split("\n");
+      const edits = computeLineDiff(oldLines, newLines);
+      const aligned = alignDiffRows(edits);
+
+      let addCount = 0;
+      let delCount = 0;
+      for (const row of aligned) {
+        if (row.kind === "add") addCount++;
+        else if (row.kind === "delete") delCount++;
+        else if (row.kind === "modify") {
+          addCount++;
+          delCount++;
+        }
+      }
+
+      const items = foldUnchangedRows(aligned);
+      return {
+        type: "edit",
+        target,
+        title: "Agen ingin mengubah file ini",
+        statusBadge: "Perubahan ditulis ke file yang sudah ada",
+        addCount,
+        delCount,
+        error: null,
+        noChanges: false,
+        canApprove: true,
+        isSinglePanel: false,
+        items,
+      };
+    }
+
+    // 2. write_file / create_file
+    if (bare === "write_file" || bare === "create_file") {
+      const newContent = typeof args.content === "string" ? args.content : JSON.stringify(args.content || "", null, 2);
+
+      // File already exists -> full rewrite
+      if (currentContent != null) {
+        if (currentContent === newContent) {
+          return {
+            type: "write",
+            target,
+            title: "Agen ingin mengubah file ini",
+            statusBadge: "Perubahan ditulis ke file yang sudah ada",
+            addCount: 0,
+            delCount: 0,
+            error: "Tidak ada perubahan",
+            noChanges: true,
+            canApprove: false,
+            isSinglePanel: false,
+            items: [],
+          };
+        }
+
+        const oldLines = currentContent.split("\n");
+        const newLines = newContent.split("\n");
+        const edits = computeLineDiff(oldLines, newLines);
+        const aligned = alignDiffRows(edits);
+
+        let addCount = 0;
+        let delCount = 0;
+        for (const row of aligned) {
+          if (row.kind === "add") addCount++;
+          else if (row.kind === "delete") delCount++;
+          else if (row.kind === "modify") {
+            addCount++;
+            delCount++;
+          }
+        }
+        const items = foldUnchangedRows(aligned);
+        return {
+          type: "write",
+          target,
+          title: "Agen ingin mengubah file ini",
+          statusBadge: "Perubahan ditulis ke file yang sudah ada",
+          addCount,
+          delCount,
+          error: null,
+          noChanges: false,
+          canApprove: true,
+          isSinglePanel: false,
+          items,
+        };
+      }
+
+      // New file (does not exist yet)
+      const lines = newContent.split("\n");
+      const items = lines.map((line, idx) => ({
+        type: "row",
+        kind: "add",
+        left: null,
+        right: { lineNo: idx + 1, sign: "+", text: line, words: [{ text: line, changed: false }] },
+      }));
+
+      return {
+        type: "create",
+        target,
+        title: "Agen ingin membuat file ini",
+        statusBadge: "File baru",
+        addCount: lines.length,
+        delCount: 0,
+        error: null,
+        noChanges: false,
+        canApprove: true,
+        isSinglePanel: true,
+        items,
+      };
+    }
+
+    // 3. delete_file
+    if (bare === "delete_file") {
+      const lines = currentContent != null ? currentContent.split("\n") : [];
+      const items = lines.map((line, idx) => ({
+        type: "row",
+        kind: "delete",
+        left: { lineNo: idx + 1, sign: "−", text: line, words: [{ text: line, changed: false }] },
+        right: null,
+      }));
+      return {
+        type: "delete",
+        target,
+        title: "Agen ingin menghapus file ini",
+        statusBadge: "File akan dihapus",
+        addCount: 0,
+        delCount: lines.length,
+        error: null,
+        noChanges: false,
+        canApprove: true,
+        isSinglePanel: true,
+        items,
+      };
+    }
+
+    // Fallback for other commands
+    return {
+      type: "generic",
+      target,
+      title: "Agen ingin menjalankan aksi ini",
+      statusBadge: "",
+      addCount: 0,
+      delCount: 0,
+      error: null,
+      noChanges: false,
+      canApprove: true,
+      isSinglePanel: true,
+      items: [],
+    };
+  }
+
   return {
     mayRetryAfterDisconnect,
     formatRunStats,
@@ -460,5 +938,11 @@ const ZSGuard = (() => {
     formatDiffPreview,
     createRollbackTracker,
     groupFilesByDirectory,
+    countOccurrences,
+    computeWordDiff,
+    computeLineDiff,
+    alignDiffRows,
+    foldUnchangedRows,
+    prepareFileReview,
   };
 })();

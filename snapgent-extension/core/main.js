@@ -345,27 +345,102 @@
         resolve({ action: "approve" });
         return;
       }
-      const preview = ZSGuard.formatDiffPreview(call);
+      const reviewData = ZSGuard.prepareFileReview(call, call ? call._currentContent : null);
       const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-      const rawLines = preview.preview ? String(preview.preview).split("\n") : [""];
-      const codeLinesHtml = rawLines.map((line, idx) => {
-        const lineNum = idx + 1;
-        const hasSign = line.startsWith("+") || line.startsWith("-");
-        const formatted = hasSign ? esc(line) : `+ ${esc(line)}`;
-        return `<div class="zs-review-code-row"><span class="zs-review-lineno">${lineNum}</span><span class="zs-review-linetxt">${formatted}</span></div>`;
-      }).join("");
+      const formatWordList = (words, kind) => {
+        if (!words || !words.length) return "";
+        return words.map((w) => {
+          const text = esc(w.text);
+          if (w.changed) {
+            return `<span class="zs-word-${kind}">${text}</span>`;
+          }
+          return text;
+        }).join("");
+      };
 
-      const isOverwriting = call && (call._fileExists !== false);
+      const renderDiffRow = (row) => {
+        const left = row.left;
+        const right = row.right;
+        const leftClass = left ? (row.kind === "delete" || row.kind === "modify" ? "zs-diff-del" : "") : "zs-diff-filler";
+        const rightClass = right ? (row.kind === "add" || row.kind === "modify" ? "zs-diff-add" : "") : "zs-diff-filler";
+
+        const leftHtml = left ? `
+          <span class="zs-diff-lineno">${left.lineNo != null ? left.lineNo : ""}</span>
+          <span class="zs-diff-sign">${esc(left.sign || "")}</span>
+          <span class="zs-diff-text">${formatWordList(left.words, "del")}</span>
+        ` : "";
+
+        const rightHtml = right ? `
+          <span class="zs-diff-lineno">${right.lineNo != null ? right.lineNo : ""}</span>
+          <span class="zs-diff-sign">${esc(right.sign || "")}</span>
+          <span class="zs-diff-text">${formatWordList(right.words, "add")}</span>
+        ` : "";
+
+        return `
+          <div class="zs-diff-row">
+            <div class="zs-diff-cell zs-diff-cell-left ${leftClass}">${leftHtml}</div>
+            <div class="zs-diff-cell zs-diff-cell-right ${rightClass}">${rightHtml}</div>
+          </div>
+        `;
+      };
+
+      const renderSinglePanelRows = () => {
+        return (reviewData.items || []).map((item) => {
+          const col = item.left || item.right || { lineNo: "", sign: "", words: [] };
+          const signClass = item.kind === "delete" ? "zs-diff-del" : (item.kind === "add" ? "zs-diff-add" : "");
+          return `
+            <div class="zs-diff-row">
+              <div class="zs-diff-cell ${signClass}">
+                <span class="zs-diff-lineno">${col.lineNo != null ? col.lineNo : ""}</span>
+                <span class="zs-diff-sign">${esc(col.sign || "")}</span>
+                <span class="zs-diff-text">${formatWordList(col.words, item.kind === "delete" ? "del" : "add")}</span>
+              </div>
+            </div>`;
+        }).join("");
+      };
+
+      const renderSideBySide = () => {
+        let html = "";
+        for (const item of (reviewData.items || [])) {
+          if (item.type === "fold") {
+            const foldId = item.foldId;
+            html += `
+              <div class="zs-diff-fold-bar" id="${foldId}-bar">
+                <button type="button" class="zs-diff-fold-btn" data-fold-id="${foldId}">Tampilkan ${item.count} baris yang tidak berubah</button>
+              </div>
+              <div class="zs-diff-fold-content" id="${foldId}-content" style="display: none;">
+            `;
+            for (const row of item.rows) {
+              html += renderDiffRow(row);
+            }
+            html += `</div>`;
+          } else {
+            html += renderDiffRow(item);
+          }
+        }
+        return html;
+      };
+
+      const diffBodyHtml = reviewData.isSinglePanel ? renderSinglePanelRows() : renderSideBySide();
 
       reviewModalEl.innerHTML = `
-        <div class="zs-review-card" role="dialog" aria-modal="true" aria-label="Agen ingin menulis file ini">
-          <div class="zs-review-head-title">Agen ingin menulis file ini</div>
-          <div class="zs-review-file-path">${esc(preview.target || "root_test.txt")}</div>
-          ${isOverwriting ? `<div class="zs-review-overwrite-pill">File sudah ada dan akan ditimpa</div>` : ""}
+        <div class="zs-review-card" role="dialog" aria-modal="true" aria-label="${esc(reviewData.title)}">
+          <div class="zs-review-head-title">${esc(reviewData.title)}</div>
+          <div class="zs-review-file-path">${esc(reviewData.target || "test-snapgent.txt")}</div>
+          <div class="zs-review-status-row">
+            ${reviewData.statusBadge ? `<span class="zs-review-badge-status">${esc(reviewData.statusBadge)}</span>` : ""}
+            <span class="zs-diff-summary-wrap"><span class="zs-diff-summary-add">+${reviewData.addCount}</span> <span class="zs-diff-summary-del">−${reviewData.delCount}</span></span>
+          </div>
 
-          <div class="zs-review-code-box">
-            ${codeLinesHtml}
+          ${reviewData.error ? `<div class="zs-review-alert-banner">${esc(reviewData.error)}</div>` : ""}
+
+          <div class="zs-diff-box">
+            <div class="zs-diff-scroll">
+              <div class="zs-diff-table">
+                ${diffBodyHtml}
+              </div>
+            </div>
           </div>
 
           <div class="zs-review-feedback-wrap">
@@ -386,11 +461,22 @@
 
           <div class="zs-review-actions-row">
             <button type="button" id="zs-review-btn-reject" class="zs-review-btn-outline"><span class="zs-btn-reject-text">Tolak</span> <span class="zs-btn-kbd">Esc</span></button>
-            <button type="button" id="zs-review-btn-approve" class="zs-review-btn-solid">Setujui ↵</button>
+            <button type="button" id="zs-review-btn-approve" class="zs-review-btn-solid" ${!reviewData.canApprove ? "disabled" : ""}>Setujui ↵</button>
           </div>
         </div>
       `;
       reviewModalEl.hidden = false;
+
+      // Wire fold toggle buttons
+      reviewModalEl.querySelectorAll(".zs-diff-fold-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const foldId = btn.getAttribute("data-fold-id");
+          const bar = reviewModalEl.querySelector(`#${foldId}-bar`);
+          const content = reviewModalEl.querySelector(`#${foldId}-content`);
+          if (bar) bar.style.display = "none";
+          if (content) content.style.display = "block";
+        });
+      });
 
       const textareaEl = reviewModalEl.querySelector("#zs-review-feedback");
       const approveBtn = reviewModalEl.querySelector("#zs-review-btn-approve");
@@ -419,6 +505,7 @@
           finish({ action: "reject", reason: textareaEl ? textareaEl.value.trim() : "" });
         } else if (e.key === "Enter") {
           if (inTextarea) return;
+          if (!reviewData.canApprove) return;
           e.preventDefault();
           e.stopPropagation();
           finish({ action: "approve" });
@@ -426,10 +513,18 @@
       };
       document.addEventListener("keydown", onKeyDown, true);
 
-      if (approveBtn) approveBtn.addEventListener("click", () => finish({ action: "approve" }));
-      if (rejectBtn) rejectBtn.addEventListener("click", () => finish({ action: "reject", reason: textareaEl ? textareaEl.value.trim() : "" }));
+      if (approveBtn && reviewData.canApprove) {
+        approveBtn.addEventListener("click", () => finish({ action: "approve" }));
+      }
+      if (rejectBtn) {
+        rejectBtn.addEventListener("click", () => finish({ action: "reject", reason: textareaEl ? textareaEl.value.trim() : "" }));
+      }
 
-      if (approveBtn) approveBtn.focus();
+      if (approveBtn && reviewData.canApprove) {
+        approveBtn.focus();
+      } else if (rejectBtn) {
+        rejectBtn.focus();
+      }
     });
   }
   let selectedTargetId = "none";
@@ -1566,6 +1661,7 @@
     if (ZSGuard.isMutatingTool(name)) {
       // Capture rollback snapshot if target modifies a workspace file path
       let fileExisted = false;
+      let currentContent = null;
       if (selectedTargetId === "vscode" && args && typeof args.path === "string") {
         try {
           const probe = await bg({
@@ -1577,6 +1673,7 @@
           });
           if (probe && probe.ok && typeof probe.text === "string") {
             fileExisted = true;
+            currentContent = probe.text;
             rollbackTracker.push({ action: "restore", path: args.path, content: probe.text });
           } else {
             rollbackTracker.push({ action: "delete", path: args.path });
@@ -1584,7 +1681,10 @@
           updateRollbackUi();
         } catch {}
       }
-      if (call) call._fileExists = fileExisted || (bareName === "replace_string_in_file");
+      if (call) {
+        call._fileExists = fileExisted;
+        call._currentContent = currentContent;
+      }
 
       if (reviewModeEnabled && !sessionAutoApproved) {
         const decision = await showReviewModal(call);
