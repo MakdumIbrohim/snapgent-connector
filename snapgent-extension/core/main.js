@@ -348,45 +348,62 @@
       const preview = ZSGuard.formatDiffPreview(call);
       const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+      const rawLines = preview.preview ? String(preview.preview).split("\n") : [""];
+      const codeLinesHtml = rawLines.map((line, idx) => {
+        const lineNum = idx + 1;
+        const hasSign = line.startsWith("+") || line.startsWith("-");
+        const formatted = hasSign ? esc(line) : `+ ${esc(line)}`;
+        return `<div class="zs-review-code-row"><span class="zs-review-lineno">${lineNum}</span><span class="zs-review-linetxt">${formatted}</span></div>`;
+      }).join("");
+
+      const isOverwriting = call && (call._fileExists !== false);
+
       reviewModalEl.innerHTML = `
-        <div class="zs-review-card" role="dialog" aria-modal="true" aria-label="Review AI action">
-          <div class="zs-review-head">
-            <span class="zs-review-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Review Action</span></span>
-            <span class="zs-review-title">${esc(preview.title)}</span>
+        <div class="zs-review-card" role="dialog" aria-modal="true" aria-label="Agen ingin menulis file ini">
+          <div class="zs-review-head-title">Agen ingin menulis file ini</div>
+          <div class="zs-review-file-path">${esc(preview.target || "root_test.txt")}</div>
+          ${isOverwriting ? `<div class="zs-review-overwrite-pill">File sudah ada dan akan ditimpa</div>` : ""}
+
+          <div class="zs-review-code-box">
+            ${codeLinesHtml}
           </div>
-          <div class="zs-review-body">
-            ${preview.target ? `<div class="zs-review-target">Target: <b>${esc(preview.target)}</b></div>` : ""}
-            <pre class="zs-review-preview">${esc(preview.preview)}</pre>
-            <div class="zs-review-feedback-wrap">
-              <span class="zs-review-feedback-label">Feedback if rejected (sent to AI to revise plan):</span>
-              <div class="zs-review-feedback-row">
-                <input type="text" id="zs-review-feedback" class="zs-review-feedback-input" placeholder="e.g. Use existing helper instead of modifying this file..." />
-                <button type="button" id="zs-review-btn-send-feedback" class="zs-review-btn zs-review-btn-send" title="Send feedback and reject this action">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                  <span>Kirim</span>
-                </button>
-              </div>
+
+          <div class="zs-review-feedback-wrap">
+            <label for="zs-review-feedback" class="zs-review-feedback-label">Catatan untuk agen jika ditolak (opsional)</label>
+            <textarea id="zs-review-feedback" class="zs-review-feedback-textarea" rows="2" placeholder="Contoh: pakai helper yang sudah ada, jangan ubah file ini"></textarea>
+          </div>
+
+          <div class="zs-review-toggle-card">
+            <div class="zs-review-toggle-info">
+              <span class="zs-review-toggle-title">Izinkan tanpa tanya selama sesi ini</span>
+              <span class="zs-review-toggle-desc">Penulisan file berikutnya langsung dijalankan agen.</span>
             </div>
+            <label class="zs-review-switch" aria-label="Izinkan tanpa tanya selama sesi ini">
+              <input type="checkbox" id="zs-review-toggle-session" ${sessionAutoApproved ? "checked" : ""} />
+              <span class="zs-review-slider"></span>
+            </label>
           </div>
-          <div class="zs-review-foot">
-            <button type="button" id="zs-review-btn-reject" class="zs-review-btn zs-review-btn-reject"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span>Reject</span></button>
-            <button type="button" id="zs-review-btn-auto" class="zs-review-btn zs-review-btn-auto" title="Approve and trust all actions in this session"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Always Allow Session</span></button>
-            <button type="button" id="zs-review-btn-approve" class="zs-review-btn zs-review-btn-approve"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Approve</span></button>
+
+          <div class="zs-review-actions-row">
+            <button type="button" id="zs-review-btn-reject" class="zs-review-btn-outline"><span class="zs-btn-reject-text">Tolak</span> <span class="zs-btn-kbd">Esc</span></button>
+            <button type="button" id="zs-review-btn-approve" class="zs-review-btn-solid">Setujui ↵</button>
           </div>
         </div>
       `;
       reviewModalEl.hidden = false;
 
-      const inputEl = reviewModalEl.querySelector("#zs-review-feedback");
+      const textareaEl = reviewModalEl.querySelector("#zs-review-feedback");
       const approveBtn = reviewModalEl.querySelector("#zs-review-btn-approve");
       const rejectBtn = reviewModalEl.querySelector("#zs-review-btn-reject");
-      const autoBtn = reviewModalEl.querySelector("#zs-review-btn-auto");
-      const sendFeedbackBtn = reviewModalEl.querySelector("#zs-review-btn-send-feedback");
+      const toggleEl = reviewModalEl.querySelector("#zs-review-toggle-session");
 
       let resolved = false;
       const finish = (result) => {
         if (resolved) return;
         resolved = true;
+        if (toggleEl && toggleEl.checked) {
+          result.autoSession = true;
+        }
         reviewModalEl.hidden = true;
         reviewModalEl.innerHTML = "";
         document.removeEventListener("keydown", onKeyDown, true);
@@ -394,11 +411,14 @@
       };
 
       const onKeyDown = (e) => {
+        const inTextarea = document.activeElement === textareaEl;
         if (e.key === "Escape") {
+          if (inTextarea) return;
           e.preventDefault();
           e.stopPropagation();
-          finish({ action: "reject", reason: inputEl ? inputEl.value.trim() : "" });
-        } else if (e.key === "Enter" && e.ctrlKey) {
+          finish({ action: "reject", reason: textareaEl ? textareaEl.value.trim() : "" });
+        } else if (e.key === "Enter") {
+          if (inTextarea) return;
           e.preventDefault();
           e.stopPropagation();
           finish({ action: "approve" });
@@ -406,24 +426,8 @@
       };
       document.addEventListener("keydown", onKeyDown, true);
 
-      if (sendFeedbackBtn) {
-        sendFeedbackBtn.addEventListener("click", () => {
-          finish({ action: "reject", reason: inputEl ? inputEl.value.trim() : "" });
-        });
-      }
-      if (inputEl) {
-        inputEl.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && !e.ctrlKey) {
-            e.preventDefault();
-            e.stopPropagation();
-            finish({ action: "reject", reason: inputEl.value.trim() });
-          }
-        });
-      }
-
       if (approveBtn) approveBtn.addEventListener("click", () => finish({ action: "approve" }));
-      if (rejectBtn) rejectBtn.addEventListener("click", () => finish({ action: "reject", reason: inputEl ? inputEl.value.trim() : "" }));
-      if (autoBtn) autoBtn.addEventListener("click", () => finish({ action: "auto_session" }));
+      if (rejectBtn) rejectBtn.addEventListener("click", () => finish({ action: "reject", reason: textareaEl ? textareaEl.value.trim() : "" }));
 
       if (approveBtn) approveBtn.focus();
     });
@@ -1561,6 +1565,7 @@
     // ── Safety & Review Guard (Human-in-the-Loop) ──────────────────────────
     if (ZSGuard.isMutatingTool(name)) {
       // Capture rollback snapshot if target modifies a workspace file path
+      let fileExisted = false;
       if (selectedTargetId === "vscode" && args && typeof args.path === "string") {
         try {
           const probe = await bg({
@@ -1571,6 +1576,7 @@
             server: selectedTargetId,
           });
           if (probe && probe.ok && typeof probe.text === "string") {
+            fileExisted = true;
             rollbackTracker.push({ action: "restore", path: args.path, content: probe.text });
           } else {
             rollbackTracker.push({ action: "delete", path: args.path });
@@ -1578,13 +1584,14 @@
           updateRollbackUi();
         } catch {}
       }
+      if (call) call._fileExists = fileExisted || (bareName === "replace_string_in_file");
 
       if (reviewModeEnabled && !sessionAutoApproved) {
         const decision = await showReviewModal(call);
         if (decision.action === "reject") {
           return `ERROR: The '${bareName}' action was rejected by the user. User feedback: ${decision.reason || "Action not approved. Please revise your approach or ask for clarification."}`;
         }
-        if (decision.action === "auto_session") {
+        if (decision.autoSession || decision.action === "auto_session") {
           sessionAutoApproved = true;
           ui.toast("Review Mode: Auto-approved for this session.");
         }

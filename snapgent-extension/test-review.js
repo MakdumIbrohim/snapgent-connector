@@ -126,9 +126,10 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
   ok("main.js checks for mutating tools with ZSGuard", /ZSGuard\.isMutatingTool\s*\(/.test(main));
   ok("main.js captures rollback snapshots before edits", /rollbackTracker\.push\s*\(/.test(main));
   ok("main.js provides showReviewModal for user approval", /function showReviewModal\s*\(/.test(main));
-  ok("main.js provides dedicated Send feedback button", /id="zs-review-btn-send-feedback"/.test(main));
+  ok("main.js provides feedback textarea for agent", /id="zs-review-feedback"/.test(main));
+  ok("main.js supports session toggle switch", /id="zs-review-toggle-session"/.test(main));
   ok("main.js handles user reject feedback", /decision\.action === "reject"/.test(main));
-  ok("main.js supports session auto-approve", /decision\.action === "auto_session"/.test(main));
+  ok("main.js supports session auto-approve", /sessionAutoApproved/.test(main));
   ok("main.js provides 1-click rollback action", /async function doRollback\s*\(/.test(main));
   ok("main.js includes rollback button on status bar", /id="zs-rollback"/.test(main));
   ok("main.js includes workspace changes summary button", /id="zs-changes-btn"/.test(main));
@@ -138,12 +139,15 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
   ok("main.js exposes Review Actions toggle in menu", /id="zs-review-mode-toggle"/.test(main));
   ok("main.js persists review mode preference", /zsReviewMode/.test(main));
 
-  ok("overlay.css styles review modal", /#zs-review-modal \{/.test(css));
-  ok("overlay.css styles review dialog card", /\.zs-review-card \{/.test(css));
-  ok("overlay.css styles review preview box", /\.zs-review-preview \{/.test(css));
-  ok("overlay.css styles send feedback button", /\.zs-review-btn-send \{/.test(css));
-  ok("overlay.css styles rollback button", /#zs-rollback \{/.test(css));
-  ok("overlay.css styles changes button on bar", /#zs-changes-btn \{/.test(css));
-  ok("overlay.css styles workspace changes modal", /#zs-changes-modal \{/.test(css));
+  ok("overlay.css styles review modal", /#zs-review-modal\s*\{/.test(css));
+  ok("overlay.css styles review dialog card", /\.zs-review-card\s*\{/.test(css));
+  ok("overlay.css styles review code box", /\.zs-review-code-box\s*\{/.test(css));
+  ok("overlay.css styles overwrite badge pill", /\.zs-review-overwrite-pill\s*\{/.test(css));
+  ok("overlay.css styles session switch toggle", /\.zs-review-switch\s*\{/.test(css));
+  ok("overlay.css styles outline reject button", /\.zs-review-btn-outline\s*\{/.test(css));
+  ok("overlay.css styles solid approve button", /\.zs-review-btn-solid\s*\{/.test(css));
+  ok("overlay.css styles rollback button", /#zs-rollback\s*\{/.test(css));
+  ok("overlay.css styles changes button on bar", /#zs-changes-btn\s*\{/.test(css));
+  ok("overlay.css styles workspace changes modal", /#zs-changes-modal\s*\{/.test(css));
 }
 
