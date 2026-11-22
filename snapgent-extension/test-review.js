@@ -102,7 +102,23 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
   ok("clear empties stack", tracker.size() === 0 && tracker.canRollback() === false);
 }
 
-// ── 4. Main & CSS Wiring Checks ─────────────────────────────────────────────
+// ── 4. Group Files by Directory (Workspace Changes Tree) ────────────────────
+{
+  ok("groupFilesByDirectory handles empty array", G.groupFilesByDirectory([]).length === 0);
+  const sample = [
+    "src/components/Header.jsx",
+    "src/components/Sidebar.jsx",
+    "src/app.js",
+    "package.json"
+  ];
+  const grouped = G.groupFilesByDirectory(sample);
+  ok("groupFilesByDirectory groups into 3 folders", grouped.length === 3);
+  ok("root file goes into ./", grouped.some((g) => g.folder === "./" && g.files[0].name === "package.json"));
+  ok("nested files grouped in src/components/",
+    grouped.some((g) => g.folder === "src/components/" && g.files.length === 2));
+}
+
+// ── 5. Main & CSS Wiring Checks ─────────────────────────────────────────────
 {
   const main = fs.readFileSync(__dirname + "/core/main.js", "utf8");
   const css = fs.readFileSync(__dirname + "/overlay.css", "utf8");
@@ -110,10 +126,14 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
   ok("main.js checks for mutating tools with ZSGuard", /ZSGuard\.isMutatingTool\s*\(/.test(main));
   ok("main.js captures rollback snapshots before edits", /rollbackTracker\.push\s*\(/.test(main));
   ok("main.js provides showReviewModal for user approval", /function showReviewModal\s*\(/.test(main));
+  ok("main.js provides dedicated Send feedback button", /id="zs-review-btn-send-feedback"/.test(main));
   ok("main.js handles user reject feedback", /decision\.action === "reject"/.test(main));
   ok("main.js supports session auto-approve", /decision\.action === "auto_session"/.test(main));
   ok("main.js provides 1-click rollback action", /async function doRollback\s*\(/.test(main));
   ok("main.js includes rollback button on status bar", /id="zs-rollback"/.test(main));
+  ok("main.js includes workspace changes summary button", /id="zs-changes-btn"/.test(main));
+  ok("main.js includes workspace changes modal container", /id="zs-changes-modal"/.test(main));
+  ok("main.js renders workspace changes preview tree", /function showWorkspaceChangesModal\s*\(/.test(main));
   ok("main.js includes review modal container", /id="zs-review-modal"/.test(main));
   ok("main.js exposes Review Actions toggle in menu", /id="zs-review-mode-toggle"/.test(main));
   ok("main.js persists review mode preference", /zsReviewMode/.test(main));
@@ -121,6 +141,9 @@ ok("scoped tool name vscode/read_file is safe", G.isMutatingTool("vscode/read_fi
   ok("overlay.css styles review modal", /#zs-review-modal \{/.test(css));
   ok("overlay.css styles review dialog card", /\.zs-review-card \{/.test(css));
   ok("overlay.css styles review preview box", /\.zs-review-preview \{/.test(css));
+  ok("overlay.css styles send feedback button", /\.zs-review-btn-send \{/.test(css));
   ok("overlay.css styles rollback button", /#zs-rollback \{/.test(css));
+  ok("overlay.css styles changes button on bar", /#zs-changes-btn \{/.test(css));
+  ok("overlay.css styles workspace changes modal", /#zs-changes-modal \{/.test(css));
 }
 

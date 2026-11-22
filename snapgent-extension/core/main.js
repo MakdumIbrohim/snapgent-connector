@@ -245,6 +245,100 @@
     }
   }
 
+  // ── Session Workspace Changes Tracking ─────────────────────────────────
+  const sessionModifiedFiles = new Map(); // path -> { path, tool, preview, title, timestamp }
+  let changesBtn = null;
+  let changesCountEl = null;
+  let changesModalEl = null;
+
+  function updateChangesUi() {
+    if (changesBtn && changesCountEl) {
+      const count = sessionModifiedFiles.size;
+      changesCountEl.textContent = String(count);
+      changesBtn.hidden = count === 0;
+    }
+  }
+
+  function showWorkspaceChangesModal() {
+    if (!changesModalEl) return;
+    const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const items = [...sessionModifiedFiles.values()];
+    const grouped = ZSGuard.groupFilesByDirectory(items);
+
+    if (!items.length) {
+      ui.toast("No workspace changes in this session yet.");
+      return;
+    }
+
+    let activePath = items[0].path;
+    const renderContent = () => {
+      const activeItem = sessionModifiedFiles.get(activePath) || items[0];
+      const treeHtml = grouped.map((g) => {
+        const fileRows = g.files.map((f) => {
+          const isCur = f.path === activePath;
+          return `<button type="button" class="zs-ws-tree-file${isCur ? " active" : ""}" data-path="${esc(f.path)}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span>${esc(f.name)}</span>
+          </button>`;
+        }).join("");
+        return `<div class="zs-ws-tree-group">
+          <div class="zs-ws-tree-folder">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            <span>${esc(g.folder)}</span>
+          </div>
+          <div class="zs-ws-tree-files">${fileRows}</div>
+        </div>`;
+      }).join("");
+
+      changesModalEl.innerHTML = `
+        <div class="zs-review-card zs-ws-changes-card" role="dialog" aria-modal="true" aria-label="Workspace Changes Preview">
+          <div class="zs-review-head">
+            <span class="zs-review-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              <span>Workspace Changes (${items.length} files)</span>
+            </span>
+            <button type="button" class="zs-ws-close-btn" aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="zs-ws-changes-layout">
+            <div class="zs-ws-tree-sidebar">
+              <div class="zs-ws-tree-title">Modified Files:</div>
+              ${treeHtml}
+            </div>
+            <div class="zs-ws-preview-pane">
+              <div class="zs-review-target">Viewing: <b>${esc(activeItem.path)}</b> (${esc(activeItem.title || activeItem.tool)})</div>
+              <pre class="zs-review-preview zs-ws-preview-code">${esc(activeItem.preview || "")}</pre>
+            </div>
+          </div>
+          <div class="zs-review-foot">
+            <button type="button" class="zs-review-btn zs-review-btn-auto zs-ws-modal-close">Close</button>
+          </div>
+        </div>
+      `;
+
+      changesModalEl.hidden = false;
+
+      changesModalEl.querySelectorAll(".zs-ws-tree-file").forEach((b) => {
+        b.addEventListener("click", () => {
+          activePath = b.dataset.path;
+          renderContent();
+        });
+      });
+
+      const closeHandler = () => {
+        changesModalEl.hidden = true;
+        changesModalEl.innerHTML = "";
+      };
+      const closeBtn = changesModalEl.querySelector(".zs-ws-close-btn");
+      const modalClose = changesModalEl.querySelector(".zs-ws-modal-close");
+      if (closeBtn) closeBtn.addEventListener("click", closeHandler);
+      if (modalClose) modalClose.addEventListener("click", closeHandler);
+    };
+
+    renderContent();
+  }
+
   function showReviewModal(call) {
     return new Promise((resolve) => {
       if (!reviewModalEl) {
@@ -264,8 +358,14 @@
             ${preview.target ? `<div class="zs-review-target">Target: <b>${esc(preview.target)}</b></div>` : ""}
             <pre class="zs-review-preview">${esc(preview.preview)}</pre>
             <div class="zs-review-feedback-wrap">
-              <span class="zs-review-feedback-label">Feedback if rejected (optional, sent to AI):</span>
-              <input type="text" id="zs-review-feedback" class="zs-review-feedback-input" placeholder="e.g. Use existing helper instead of modifying this file..." />
+              <span class="zs-review-feedback-label">Feedback if rejected (sent to AI to revise plan):</span>
+              <div class="zs-review-feedback-row">
+                <input type="text" id="zs-review-feedback" class="zs-review-feedback-input" placeholder="e.g. Use existing helper instead of modifying this file..." />
+                <button type="button" id="zs-review-btn-send-feedback" class="zs-review-btn zs-review-btn-send" title="Send feedback and reject this action">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  <span>Kirim</span>
+                </button>
+              </div>
             </div>
           </div>
           <div class="zs-review-foot">
@@ -281,6 +381,7 @@
       const approveBtn = reviewModalEl.querySelector("#zs-review-btn-approve");
       const rejectBtn = reviewModalEl.querySelector("#zs-review-btn-reject");
       const autoBtn = reviewModalEl.querySelector("#zs-review-btn-auto");
+      const sendFeedbackBtn = reviewModalEl.querySelector("#zs-review-btn-send-feedback");
 
       let resolved = false;
       const finish = (result) => {
@@ -304,6 +405,21 @@
         }
       };
       document.addEventListener("keydown", onKeyDown, true);
+
+      if (sendFeedbackBtn) {
+        sendFeedbackBtn.addEventListener("click", () => {
+          finish({ action: "reject", reason: inputEl ? inputEl.value.trim() : "" });
+        });
+      }
+      if (inputEl) {
+        inputEl.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !e.ctrlKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            finish({ action: "reject", reason: inputEl.value.trim() });
+          }
+        });
+      }
 
       if (approveBtn) approveBtn.addEventListener("click", () => finish({ action: "approve" }));
       if (rejectBtn) rejectBtn.addEventListener("click", () => finish({ action: "reject", reason: inputEl ? inputEl.value.trim() : "" }));
@@ -1519,6 +1635,17 @@
         tokIn: A.genTok || 0,
       },
     }).catch(() => {});
+    if (r && r.ok !== false && ZSGuard.isMutatingTool(name) && args && typeof args.path === "string") {
+      const prev = ZSGuard.formatDiffPreview(call);
+      sessionModifiedFiles.set(args.path, {
+        path: args.path,
+        tool: name,
+        title: prev.title,
+        preview: prev.preview,
+        timestamp: Date.now()
+      });
+      updateChangesUi();
+    }
     if (r && r.kind === "stopped") return "(stopped by user)";
     if (!r) return ZS.FEEDBACK.bridgeOffline;
     // The MCP server answers SUCCESSFULLY (ok:true) when no Studio is attached
@@ -1622,6 +1749,17 @@
       }
       if (retry && retry.kind !== "disconnected") {
         r = retry;
+        if (r && r.ok !== false && ZSGuard.isMutatingTool(name) && args && typeof args.path === "string") {
+          const prev = ZSGuard.formatDiffPreview(call);
+          sessionModifiedFiles.set(args.path, {
+            path: args.path,
+            tool: name,
+            title: prev.title,
+            preview: prev.preview,
+            timestamp: Date.now()
+          });
+          updateChangesUi();
+        }
       } else {
         // Record WHY we are declaring the bridge offline. Every path (socket closed,
         // never opened, worker gave no answer) ends in the same message otherwise,
@@ -2685,6 +2823,8 @@
     A.userStopped = false;
     A.stop = false;               // clear any halt left by a prior aborted bootstrap
     sessionAutoApproved = false;  // require review for new session if review mode is on
+    sessionModifiedFiles.clear();
+    updateChangesUi();
     // Snapshot any turn already on screen at session start (normally none on a
     // clean new chat; on a reload-restored generation it's the stray turn). The
     // auto-resume watchdog refuses to run a tool from this baseline turn so a
@@ -3710,6 +3850,7 @@
           <button id="zs-action"></button>
           <button id="zs-stop" hidden>■ Stop</button>
           <button id="zs-rollback" hidden type="button" title="Rollback last file modification"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>Undo</span></button>
+          <button id="zs-changes-btn" hidden type="button" title="View workspace changes summary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span>Changes (<span id="zs-changes-count">0</span>)</span></button>
           <div class="zs-target-wrap" title="Choose which MCP server receives commands">
             <select id="zs-target" aria-label="MCP target" hidden tabindex="-1">
               <option value="none">None</option>
@@ -3726,6 +3867,7 @@
         <div id="zs-menu" hidden></div>
         <div id="zs-target-menu" hidden></div>
         <div id="zs-review-modal" hidden></div>
+        <div id="zs-changes-modal" hidden></div>
         ${P.unstableWarning ? `<button id="zs-unstable" aria-label="Provider may be unstable" hidden>⚠ unstable</button>` : ""}
       `;
       document.documentElement.appendChild(root);
@@ -3741,6 +3883,17 @@
       dotBtn = root.querySelector("#zs-dot");
       rollbackBtn = root.querySelector("#zs-rollback");
       reviewModalEl = root.querySelector("#zs-review-modal");
+      changesBtn = root.querySelector("#zs-changes-btn");
+      changesCountEl = root.querySelector("#zs-changes-count");
+      changesModalEl = root.querySelector("#zs-changes-modal");
+      if (changesBtn) {
+        changesBtn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          showWorkspaceChangesModal();
+        });
+      }
+      updateChangesUi();
       if (rollbackBtn) {
         rollbackBtn.addEventListener("click", (ev) => {
           ev.preventDefault();

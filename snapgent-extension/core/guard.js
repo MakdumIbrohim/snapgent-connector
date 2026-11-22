@@ -418,6 +418,33 @@ const ZSGuard = (() => {
     };
   }
 
+  // Groups a list of file change records or paths by their directory for workspace preview.
+  function groupFilesByDirectory(items) {
+    if (!Array.isArray(items)) return [];
+    const map = new Map();
+    for (const item of items) {
+      if (!item) continue;
+      const path = typeof item === "string" ? item : String(item.path || "");
+      if (!path) continue;
+      const norm = path.replace(/\\/g, "/");
+      const lastSlash = norm.lastIndexOf("/");
+      const folder = lastSlash === -1 ? "./" : norm.slice(0, lastSlash + 1);
+      const name = lastSlash === -1 ? norm : norm.slice(lastSlash + 1);
+      if (!map.has(folder)) map.set(folder, []);
+      map.get(folder).push({
+        path: norm,
+        name,
+        item: typeof item === "object" ? item : { path: norm, name },
+      });
+    }
+    const result = [];
+    for (const [folder, files] of map.entries()) {
+      result.push({ folder, files });
+    }
+    result.sort((a, b) => a.folder.localeCompare(b.folder));
+    return result;
+  }
+
   return {
     mayRetryAfterDisconnect,
     formatRunStats,
@@ -432,5 +459,6 @@ const ZSGuard = (() => {
     isMutatingTool,
     formatDiffPreview,
     createRollbackTracker,
+    groupFilesByDirectory,
   };
 })();

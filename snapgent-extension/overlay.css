@@ -1625,3 +1625,112 @@ html.zs-site-chatgpt.dark .zs-chip:not(.result).err { border-color: rgba(239, 68
 }
 #zs-rollback[hidden] { display: none !important; }
 
+/* ── Feedback Row with Send Button ──────────────────────────────────────── */
+.zs-review-feedback-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.zs-review-btn-send {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.zs-review-btn-send:hover {
+  background: rgba(239, 68, 68, 0.35);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+/* ── Workspace Changes Button on Bar ────────────────────────────────────── */
+#zs-changes-btn {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #c7d2fe;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+#zs-changes-btn svg {
+  display: block; flex-shrink: 0;
+}
+#zs-changes-btn:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(99, 102, 241, 0.6);
+}
+#zs-changes-btn[hidden] { display: none !important; }
+
+/* ── Workspace Changes Modal ────────────────────────────────────────────── */
+#zs-changes-modal {
+  position: fixed; inset: 0; z-index: 2147483640;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  padding: 16px;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  box-sizing: border-box;
+}
+#zs-changes-modal[hidden] { display: none !important; }
+
+.zs-ws-changes-card {
+  width: min(780px, 96vw);
+  max-height: 85vh;
+}
+.zs-ws-changes-layout {
+  display: flex; min-height: 280px; max-height: 480px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.zs-ws-tree-sidebar {
+  width: 240px; flex-shrink: 0;
+  background: #131317;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px;
+  overflow-y: auto;
+}
+.zs-ws-tree-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  color: #9ca3af; margin-bottom: 8px; letter-spacing: 0.5px;
+}
+.zs-ws-tree-group {
+  margin-bottom: 10px;
+}
+.zs-ws-tree-folder {
+  font-size: 11px; font-weight: 600; color: #fbbf24;
+  display: flex; align-items: center; gap: 5px;
+  margin-bottom: 4px;
+}
+.zs-ws-tree-files {
+  display: flex; flex-direction: column; gap: 2px; padding-left: 14px;
+}
+.zs-ws-tree-file {
+  background: transparent; border: none; cursor: pointer;
+  color: #d1d5db; font-size: 11px; text-align: left;
+  padding: 4px 6px; border-radius: 4px;
+  display: flex; align-items: center; gap: 6px;
+  font-family: ui-monospace, monospace;
+}
+.zs-ws-tree-file:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.zs-ws-tree-file.active {
+  background: rgba(99, 102, 241, 0.2);
+  color: #c7d2fe; font-weight: 600;
+}
+.zs-ws-preview-pane {
+  flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 8px;
+  background: #17171c; overflow: hidden;
+}
+.zs-ws-preview-code {
+  flex: 1; max-height: 400px;
+}
+.zs-ws-close-btn {
+  background: transparent; border: none; color: #9ca3af;
+  cursor: pointer; padding: 4px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+}
+.zs-ws-close-btn:hover { color: #f3f4f6; background: rgba(255, 255, 255, 0.1); }
+
+
