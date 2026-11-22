@@ -1530,6 +1530,9 @@ html.zs-site-chatgpt.dark .zs-chip:not(.result).err { border-color: rgba(239, 68
   border: 1px solid rgba(251, 191, 36, 0.3);
   padding: 2px 8px; border-radius: 6px;
 }
+.zs-review-badge svg {
+  display: block; flex-shrink: 0;
+}
 .zs-review-title {
   font-size: 13px; font-weight: 600; color: #f3f4f6;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1581,6 +1584,10 @@ html.zs-site-chatgpt.dark .zs-chip:not(.result).err { border-color: rgba(239, 68
   padding: 6px 12px; border-radius: 6px;
   font-size: 12px; font-weight: 600; cursor: pointer;
   border: 1px solid transparent; transition: background 0.15s, opacity 0.15s;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.zs-review-btn svg {
+  display: block; flex-shrink: 0;
 }
 .zs-review-btn:hover { opacity: 0.9; }
 .zs-review-btn:active { transform: translateY(1px); }
@@ -1607,7 +1614,10 @@ html.zs-site-chatgpt.dark .zs-chip:not(.result).err { border-color: rgba(239, 68
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  display: inline-flex; align-items: center; gap: 4px;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+#zs-rollback svg {
+  display: block; flex-shrink: 0;
 }
 #zs-rollback:hover {
   background: rgba(234, 179, 8, 0.25);

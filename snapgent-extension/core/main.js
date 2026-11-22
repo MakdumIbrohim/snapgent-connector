@@ -257,7 +257,7 @@
       reviewModalEl.innerHTML = `
         <div class="zs-review-card" role="dialog" aria-modal="true" aria-label="Review AI action">
           <div class="zs-review-head">
-            <span class="zs-review-badge">🛡️ Review Action</span>
+            <span class="zs-review-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Review Action</span></span>
             <span class="zs-review-title">${esc(preview.title)}</span>
           </div>
           <div class="zs-review-body">
@@ -269,9 +269,9 @@
             </div>
           </div>
           <div class="zs-review-foot">
-            <button type="button" id="zs-review-btn-reject" class="zs-review-btn zs-review-btn-reject">✗ Reject</button>
-            <button type="button" id="zs-review-btn-auto" class="zs-review-btn zs-review-btn-auto" title="Approve and trust all actions in this session">⚡ Always Allow Session</button>
-            <button type="button" id="zs-review-btn-approve" class="zs-review-btn zs-review-btn-approve">✓ Approve</button>
+            <button type="button" id="zs-review-btn-reject" class="zs-review-btn zs-review-btn-reject"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span>Reject</span></button>
+            <button type="button" id="zs-review-btn-auto" class="zs-review-btn zs-review-btn-auto" title="Approve and trust all actions in this session"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Always Allow Session</span></button>
+            <button type="button" id="zs-review-btn-approve" class="zs-review-btn zs-review-btn-approve"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Approve</span></button>
           </div>
         </div>
       `;
@@ -3709,7 +3709,7 @@
           <span id="zs-state"></span>
           <button id="zs-action"></button>
           <button id="zs-stop" hidden>■ Stop</button>
-          <button id="zs-rollback" hidden type="button" title="Rollback last file modification">⏪ Undo</button>
+          <button id="zs-rollback" hidden type="button" title="Rollback last file modification"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>Undo</span></button>
           <div class="zs-target-wrap" title="Choose which MCP server receives commands">
             <select id="zs-target" aria-label="MCP target" hidden tabindex="-1">
               <option value="none">None</option>
